@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NeonLedger.Api/NeonLedger.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NeonLedger.Tests/NeonLedger.Tests.csproj" />
+  </Folder>
+</Solution>

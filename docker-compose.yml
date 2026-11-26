@@ -1,0 +1,21 @@
+# PostgreSQL for local development. Host port 5433, so it does not collide with a
+# database you already run on 5432.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+      POSTGRES_DB: neon_ledger
+    ports:
+      - "5433:5432"
+    volumes:
+      - neon-ledger-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger -d neon_ledger"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  neon-ledger-data:
