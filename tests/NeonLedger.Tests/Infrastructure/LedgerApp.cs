@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NeonLedger.Api;
 using NeonLedger.Data;
 using NeonLedger.Domain;
+using NeonLedger.Payments;
 using Npgsql;
 
 namespace NeonLedger.Tests.Infrastructure;
@@ -102,6 +103,35 @@ public sealed class LedgerApp(PostgresServer server) : IAsyncLifetime
     public Task<HttpResponseMessage> ReverseAsync(string? key, Guid transactionId) =>
         SendAsync($"/v1/transactions/{transactionId}/reversal", key, body: null);
 
+    public Task<HttpResponseMessage> CreatePaymentAsync(
+        string? key,
+        PaymentRail rail,
+        AccountResponse source,
+        AccountResponse destination,
+        long amount,
+        string description = "Payment") =>
+        SendAsync("/v1/payments", key, new CreatePaymentRequest(rail, source.Id, destination.Id, amount, description));
+
+    /// <summary>Creates a payment that must be accepted, and returns it.</summary>
+    public async Task<PaymentResponse> CreatePaymentOkAsync(PaymentRail rail, AccountResponse source, AccountResponse destination, long amount)
+    {
+        var response = await CreatePaymentAsync(NewKey(), rail, source, destination, amount);
+        Assert.Equal(System.Net.HttpStatusCode.Created, response.StatusCode);
+        return await ReadAsync<PaymentResponse>(response);
+    }
+
+    public Task<HttpResponseMessage> SettleAsync(string? key, Guid paymentId) =>
+        SendAsync($"/v1/payments/{paymentId}/settle", key, body: null);
+
+    public Task<HttpResponseMessage> CancelAsync(string? key, Guid paymentId) =>
+        SendAsync($"/v1/payments/{paymentId}/cancel", key, body: null);
+
+    public Task<HttpResponseMessage> ReturnAsync(string? key, Guid paymentId, string? reason = "R01") =>
+        SendAsync($"/v1/payments/{paymentId}/return", key, new ReturnPaymentRequest(reason));
+
+    public async Task<PaymentResponse> GetPaymentAsync(Guid id) =>
+        (await Client.GetFromJsonAsync<PaymentResponse>($"/v1/payments/{id}", Json, Ct))!;
+
     public async Task<TransactionResponse> PostOkAsync(string description, params EntryRequest[] entries)
     {
         var response = await PostAsync(NewKey(), description, entries);
@@ -172,7 +202,7 @@ public sealed class LedgerApp(PostgresServer server) : IAsyncLifetime
 
         if (key is not null)
         {
-            request.Headers.Add(TransactionEndpoints.IdempotencyKeyHeader, key);
+            request.Headers.Add(Idempotent.KeyHeader, key);
         }
 
         return await Client.SendAsync(request, Ct);

@@ -18,6 +18,12 @@ public sealed record LedgerError(string Code, string Message, int Status)
     public static LedgerError BalanceOutOfRange(Guid id) =>
         new("balance_out_of_range", $"Account {id} cannot hold a balance this large.", StatusCodes.Status422UnprocessableEntity);
 
+    public static LedgerError PaymentNotFound(Guid id) =>
+        new("payment_not_found", $"Payment {id} does not exist.", StatusCodes.Status404NotFound);
+
+    public static LedgerError InvalidPaymentState(Guid id, string action, string reason) =>
+        new("invalid_payment_state", $"Payment {id} cannot be {action}: {reason}.", StatusCodes.Status409Conflict);
+
     public static LedgerError TransactionNotFound(Guid id) =>
         new("transaction_not_found", $"Transaction {id} does not exist.", StatusCodes.Status404NotFound);
 

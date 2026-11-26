@@ -120,7 +120,7 @@ public sealed class PostingTests(LedgerApp app) : IClassFixture<LedgerApp>
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
         };
-        request.Headers.Add(TransactionEndpoints.IdempotencyKeyHeader, NewKey());
+        request.Headers.Add(Idempotent.KeyHeader, NewKey());
 
         var response = await app.Client.SendAsync(request, Ct);
 

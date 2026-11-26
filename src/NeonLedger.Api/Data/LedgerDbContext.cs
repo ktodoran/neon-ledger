@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NeonLedger.Domain;
 using NeonLedger.Events;
 using NeonLedger.Idempotency;
+using NeonLedger.Payments;
 
 namespace NeonLedger.Data;
 
@@ -18,6 +19,8 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
 
     public DbSet<EventRecord> Events => Set<EventRecord>();
 
+    public DbSet<Payment> Payments => Set<Payment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Stored as 'debit' / 'credit' so the SQL in the migrations and the integrity check can read them.
@@ -29,7 +32,8 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
         {
             account.ToTable("accounts", table =>
             {
-                table.HasCheckConstraint("ck_accounts_balance_not_negative", "allow_negative OR balance >= 0");
+                table.HasCheckConstraint("ck_accounts_available_not_negative", "allow_negative OR balance - held >= 0");
+                table.HasCheckConstraint("ck_accounts_held_not_negative", "held >= 0");
                 table.HasCheckConstraint("ck_accounts_normal_balance", "normal_balance IN ('debit', 'credit')");
                 table.HasCheckConstraint("ck_accounts_currency", "currency ~ '^[A-Z]{3}$'");
             });
@@ -81,6 +85,40 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
             entry.HasIndex(e => new { e.AccountId, e.Id }).IsDescending(false, true);
         });
 
+        modelBuilder.Entity<Payment>(payment =>
+        {
+            payment.ToTable("payments", table =>
+            {
+                table.HasCheckConstraint("ck_payments_amount_positive", "amount > 0");
+                table.HasCheckConstraint("ck_payments_rail", "rail IN ('instant', 'ach')");
+                table.HasCheckConstraint("ck_payments_status", "status IN ('pending', 'settled', 'canceled', 'returned')");
+                table.HasCheckConstraint("ck_payments_distinct_accounts", "source_account_id <> destination_account_id");
+
+                // A row can only say what its status allows it to say.
+                table.HasCheckConstraint(
+                    "ck_payments_settlement_matches_status",
+                    "(settlement_transaction_id IS NOT NULL) = (status IN ('settled', 'returned'))");
+                table.HasCheckConstraint(
+                    "ck_payments_return_matches_status",
+                    "(return_transaction_id IS NOT NULL) = (status = 'returned') AND (return_reason IS NOT NULL) = (status = 'returned')");
+                table.HasCheckConstraint("ck_payments_instant_is_final", "rail <> 'instant' OR status = 'settled'");
+            });
+            payment.HasKey(p => p.Id);
+            payment.Property(p => p.Id).ValueGeneratedNever();
+            payment.Property(p => p.Rail).HasConversion(Lowercase<PaymentRail>()).HasMaxLength(16);
+            payment.Property(p => p.Status).HasConversion(Lowercase<PaymentStatus>()).HasMaxLength(16);
+            payment.Property(p => p.Currency).HasColumnType("char(3)");
+            payment.Property(p => p.Description).HasMaxLength(Payment.MaxDescriptionLength);
+            payment.Property(p => p.ReturnReason).HasMaxLength(Payment.MaxReturnReasonLength);
+            payment.HasOne<Account>().WithMany().HasForeignKey(p => p.SourceAccountId).OnDelete(DeleteBehavior.Restrict);
+            payment.HasOne<Account>().WithMany().HasForeignKey(p => p.DestinationAccountId).OnDelete(DeleteBehavior.Restrict);
+            payment.HasOne<JournalTransaction>().WithMany().HasForeignKey(p => p.SettlementTransactionId).OnDelete(DeleteBehavior.Restrict);
+            payment.HasOne<JournalTransaction>().WithMany().HasForeignKey(p => p.ReturnTransactionId).OnDelete(DeleteBehavior.Restrict);
+
+            // Serves "what is this account holding funds for", which the integrity check asks.
+            payment.HasIndex(p => new { p.SourceAccountId, p.Status });
+        });
+
         modelBuilder.Entity<EventRecord>(record =>
         {
             record.ToTable("events");
@@ -103,4 +141,9 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
             record.Property(r => r.RequestHash).HasColumnType("char(64)");
         });
     }
+
+    /// <summary>Stores an enum as its lowercase name, so the SQL constraints and triggers can read it.</summary>
+    private static ValueConverter<TEnum, string> Lowercase<TEnum>()
+        where TEnum : struct, Enum =>
+        new(value => value.ToString().ToLowerInvariant(), value => Enum.Parse<TEnum>(value, true));
 }

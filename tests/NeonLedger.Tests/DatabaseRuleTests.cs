@@ -1,3 +1,4 @@
+using NeonLedger.Payments;
 using NeonLedger.Tests.Infrastructure;
 using Npgsql;
 using static NeonLedger.Tests.Infrastructure.LedgerApp;
@@ -68,7 +69,7 @@ public sealed class DatabaseRuleTests(LedgerApp app) : IClassFixture<LedgerApp>
             ExecuteAsync(connection, $"UPDATE accounts SET balance = -1 WHERE id = '{account.Id}'"));
 
         Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
-        Assert.Equal("ck_accounts_balance_not_negative", error.ConstraintName);
+        Assert.Equal("ck_accounts_available_not_negative", error.ConstraintName);
     }
 
     [Fact]
@@ -86,6 +87,56 @@ public sealed class DatabaseRuleTests(LedgerApp app) : IClassFixture<LedgerApp>
             """));
 
         Assert.Equal("ck_entries_amount_positive", error.ConstraintName);
+    }
+
+    [Theory]
+    [InlineData("UPDATE payments SET amount = amount + 1", "cannot change")]
+    [InlineData("UPDATE payments SET description = 'edited'", "cannot change")]
+    [InlineData("UPDATE payments SET status = 'pending', settlement_transaction_id = NULL WHERE status = 'settled'", "cannot go from settled to pending")]
+    [InlineData("UPDATE payments SET status = 'pending' WHERE status = 'canceled'", "cannot go from canceled to pending")]
+    [InlineData("DELETE FROM payments", "cannot be deleted")]
+    [InlineData("TRUNCATE payments", "append-only")]
+    public async Task A_payment_cannot_be_rewritten_or_moved_backward(string sql, string expected)
+    {
+        var payer = await app.CreateFundedAccountAsync("Payer", 1_000);
+        var payee = await app.CreateAccountAsync("Payee");
+        await app.SettleAsync(NewKey(), (await app.CreatePaymentOkAsync(PaymentRail.Ach, payer, payee, 100)).Id);
+        await app.CancelAsync(NewKey(), (await app.CreatePaymentOkAsync(PaymentRail.Ach, payer, payee, 100)).Id);
+        await using var connection = await app.OpenConnectionAsync();
+
+        var error = await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(connection, sql));
+
+        Assert.Equal(PostgresErrorCodes.RestrictViolation, error.SqlState);
+        Assert.Contains(expected, error.MessageText, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("UPDATE payments SET status = 'settled' WHERE status = 'pending'", "ck_payments_settlement_matches_status")]
+    [InlineData("UPDATE payments SET status = 'canceled', return_reason = 'R01' WHERE status = 'pending'", "ck_payments_return_matches_status")]
+    public async Task A_payment_row_cannot_claim_a_status_it_has_no_evidence_for(string sql, string constraint)
+    {
+        var payer = await app.CreateFundedAccountAsync("Payer", 1_000);
+        var payee = await app.CreateAccountAsync("Payee");
+        await app.CreatePaymentOkAsync(PaymentRail.Ach, payer, payee, 100);
+        await using var connection = await app.OpenConnectionAsync();
+
+        var error = await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(connection, sql));
+
+        Assert.Equal(constraint, error.ConstraintName);
+    }
+
+    [Theory]
+    [InlineData("held = -1", "ck_accounts_held_not_negative")]
+    [InlineData("held = balance + 1", "ck_accounts_available_not_negative")]
+    public async Task A_hold_cannot_be_negative_or_larger_than_the_balance(string assignment, string constraint)
+    {
+        var account = await app.CreateFundedAccountAsync("Customer", 1_000);
+        await using var connection = await app.OpenConnectionAsync();
+
+        var error = await Assert.ThrowsAsync<PostgresException>(() =>
+            ExecuteAsync(connection, $"UPDATE accounts SET {assignment} WHERE id = '{account.Id}'"));
+
+        Assert.Equal(constraint, error.ConstraintName);
     }
 
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)

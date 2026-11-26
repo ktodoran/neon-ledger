@@ -27,6 +27,15 @@ public sealed class Account
     /// <summary>Minor units, signed in the account's normal direction.</summary>
     public long Balance { get; private set; }
 
+    /// <summary>
+    /// The part of the balance promised to payments that have not settled yet.
+    /// It is still in the account, but it cannot be spent twice.
+    /// </summary>
+    public long Held { get; private set; }
+
+    /// <summary>What can be spent right now: the balance less what is held.</summary>
+    public long Available => Balance - Held;
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public static Account Open(string name, string currency, Direction normalBalance, bool allowNegative, DateTimeOffset now) =>
@@ -42,6 +51,18 @@ public sealed class Account
 
     /// <summary>The change an entry makes to this account's balance.</summary>
     public long DeltaFor(Direction direction, long amount) => direction == NormalBalance ? amount : -amount;
+
+    public void PlaceHold(long amount) => Held = checked(Held + amount);
+
+    public void ReleaseHold(long amount)
+    {
+        if (amount > Held)
+        {
+            throw new InvalidOperationException($"Account {Id} holds {Held}; cannot release {amount}.");
+        }
+
+        Held -= amount;
+    }
 
     /// <summary>Applies an entry and returns the balance after it.</summary>
     public long Apply(Direction direction, long amount)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using NeonLedger.Domain;
+using NeonLedger.Payments;
 
 namespace NeonLedger.Api;
 
@@ -12,10 +13,21 @@ public sealed record AccountResponse(
     Direction NormalBalance,
     bool AllowNegative,
     long Balance,
+    long Held,
+    long Available,
     DateTimeOffset CreatedAt)
 {
     public static AccountResponse From(Account account) =>
-        new(account.Id, account.Name, account.Currency, account.NormalBalance, account.AllowNegative, account.Balance, account.CreatedAt);
+        new(
+            account.Id,
+            account.Name,
+            account.Currency,
+            account.NormalBalance,
+            account.AllowNegative,
+            account.Balance,
+            account.Held,
+            account.Available,
+            account.CreatedAt);
 }
 
 public sealed record EntryRequest(Guid AccountId, Direction? Direction, long Amount);
@@ -60,6 +72,49 @@ public sealed record EventResponse(string Cursor, string Type, DateTimeOffset Oc
 /// <summary>A page of the event feed, oldest first. Pass <c>NextCursor</c> as <c>after</c> to continue.</summary>
 public sealed record EventPage(IReadOnlyList<EventResponse> Items, string NextCursor);
 
+public sealed record CreatePaymentRequest(PaymentRail? Rail, Guid SourceAccountId, Guid DestinationAccountId, long Amount, string? Description);
+
+public sealed record ReturnPaymentRequest(string? Reason);
+
+public sealed record PaymentResponse(
+    Guid Id,
+    PaymentRail Rail,
+    PaymentStatus Status,
+    Guid SourceAccountId,
+    Guid DestinationAccountId,
+    long Amount,
+    string Currency,
+    string Description,
+    Guid? SettlementTransactionId,
+    Guid? ReturnTransactionId,
+    string? ReturnReason,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt)
+{
+    public static PaymentResponse From(Payment payment) =>
+        new(
+            payment.Id,
+            payment.Rail,
+            payment.Status,
+            payment.SourceAccountId,
+            payment.DestinationAccountId,
+            payment.Amount,
+            payment.Currency,
+            payment.Description,
+            payment.SettlementTransactionId,
+            payment.ReturnTransactionId,
+            payment.ReturnReason,
+            payment.CreatedAt,
+            payment.UpdatedAt);
+}
+
 public sealed record AccountMismatch(Guid AccountId, long StoredBalance, long BalanceFromEntries);
 
-public sealed record IntegrityReport(bool Consistent, long DebitsMinusCredits, int AccountsChecked, IReadOnlyList<AccountMismatch> Mismatches);
+public sealed record HoldMismatch(Guid AccountId, long StoredHeld, long HeldFromPayments);
+
+public sealed record IntegrityReport(
+    bool Consistent,
+    long DebitsMinusCredits,
+    int AccountsChecked,
+    IReadOnlyList<AccountMismatch> Mismatches,
+    IReadOnlyList<HoldMismatch> HoldMismatches);

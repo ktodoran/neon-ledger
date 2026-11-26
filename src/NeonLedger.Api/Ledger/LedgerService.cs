@@ -10,6 +10,9 @@ public sealed record EntryLine(Guid AccountId, Direction Direction, long Amount)
 
 public sealed record PostTransaction(string Description, IReadOnlyList<EntryLine> Entries);
 
+/// <summary>A hold to lift in the same step as a posting, so the held funds can pay for it.</summary>
+public readonly record struct HoldRelease(Guid AccountId, long Amount);
+
 /// <summary>
 /// Posts transactions. Every method here must run inside a database transaction
 /// that the caller commits: the account rows are locked until then.
@@ -23,7 +26,29 @@ public sealed class LedgerService(LedgerDbContext db, TimeProvider clock, EventL
 
     /// <summary>Posts a balanced transaction. The command is assumed to have passed <see cref="PostTransactionValidator"/>.</summary>
     public Task<Result<JournalTransaction>> PostAsync(PostTransaction command, CancellationToken cancellationToken) =>
-        PostAsync(command, reverses: null, cancellationToken);
+        PostAsync(command, reverses: null, release: null, cancellationToken);
+
+    /// <summary>Posts a transaction and releases a hold on one of its accounts at the same time.</summary>
+    public Task<Result<JournalTransaction>> PostAsync(PostTransaction command, HoldRelease release, CancellationToken cancellationToken) =>
+        PostAsync(command, reverses: null, release, cancellationToken);
+
+    /// <summary>
+    /// Locks accounts for the rest of the database transaction, always in id order.
+    /// Everything that changes a balance or a hold goes through here, so two writers
+    /// that share accounts queue instead of deadlocking, and each sees what the other left.
+    ///
+    /// The lock is FOR NO KEY UPDATE, the one an ordinary UPDATE takes. It excludes every
+    /// other writer of the row, but not a foreign-key check, so a transaction that only
+    /// refers to an account (a new pending payment naming its destination) is not held up.
+    /// </summary>
+    public async Task<Dictionary<Guid, Account>> LockAccountsAsync(IEnumerable<Guid> accountIds, CancellationToken cancellationToken)
+    {
+        EnsureInTransaction();
+        var ids = accountIds.Distinct().ToArray();
+        return await db.Accounts
+            .FromSql($"SELECT * FROM accounts WHERE id = ANY({ids}) ORDER BY id FOR NO KEY UPDATE")
+            .ToDictionaryAsync(a => a.Id, cancellationToken);
+    }
 
     /// <summary>Posts the mirror image of a transaction. A transaction can be reversed once.</summary>
     public async Task<Result<JournalTransaction>> ReverseAsync(Guid transactionId, CancellationToken cancellationToken)
@@ -59,20 +84,19 @@ public sealed class LedgerService(LedgerDbContext db, TimeProvider clock, EventL
             .OrderBy(e => e.Id)
             .Select(e => new EntryLine(e.AccountId, e.Direction == Direction.Debit ? Direction.Credit : Direction.Debit, e.Amount))
             .ToList();
-        return await PostAsync(new PostTransaction($"Reversal of {transactionId}", mirrored), transactionId, cancellationToken);
+        return await PostAsync(new PostTransaction($"Reversal of {transactionId}", mirrored), transactionId, release: null, cancellationToken);
     }
 
-    private async Task<Result<JournalTransaction>> PostAsync(PostTransaction command, Guid? reverses, CancellationToken cancellationToken)
+    private async Task<Result<JournalTransaction>> PostAsync(
+        PostTransaction command,
+        Guid? reverses,
+        HoldRelease? release,
+        CancellationToken cancellationToken)
     {
         EnsureInTransaction();
 
-        // Lock every account this transaction touches, always in id order. Two transactions
-        // that share accounts then queue instead of deadlocking, and each one sees the
-        // balance the other left behind.
         var ids = command.Entries.Select(e => e.AccountId).Distinct().ToArray();
-        var accounts = await db.Accounts
-            .FromSql($"SELECT * FROM accounts WHERE id = ANY({ids}) ORDER BY id FOR UPDATE")
-            .ToDictionaryAsync(a => a.Id, cancellationToken);
+        var accounts = await LockAccountsAsync(ids, cancellationToken);
 
         foreach (var id in ids)
         {
@@ -108,13 +132,20 @@ public sealed class LedgerService(LedgerDbContext db, TimeProvider clock, EventL
         }
 
         // Checked on the final balances, so one transaction may debit and credit the
-        // same account as long as it ends at or above zero.
+        // same account as long as it ends with nothing overdrawn. Held funds do not
+        // count as spendable, except by the payment whose hold is being released here.
         foreach (var account in accounts.Values)
         {
-            if (balances[account.Id] < 0 && !account.AllowNegative)
+            var held = account.Held - (release?.AccountId == account.Id ? release.Value.Amount : 0);
+            if (balances[account.Id] - held < 0 && !account.AllowNegative)
             {
                 return LedgerError.InsufficientFunds(account.Id);
             }
+        }
+
+        if (release is { } lifted)
+        {
+            accounts[lifted.AccountId].ReleaseHold(lifted.Amount);
         }
 
         var transaction = JournalTransaction.Create(command.Description, currency, reverses, clock.GetUtcNow());

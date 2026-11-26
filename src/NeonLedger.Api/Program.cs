@@ -6,6 +6,7 @@ using NeonLedger.Data;
 using NeonLedger.Events;
 using NeonLedger.Idempotency;
 using NeonLedger.Ledger;
+using NeonLedger.Payments;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,7 @@ builder.Services.AddDbContext<LedgerDbContext>((services, options) =>
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<LedgerService>();
 builder.Services.AddScoped<EventLog>();
+builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<IdempotentExecutor>();
 builder.Services.AddScoped<IntegrityCheck>();
 
@@ -63,6 +65,7 @@ app.MapGet("/v1/integrity", async (IntegrityCheck check, CancellationToken cance
     .Produces<IntegrityReport>();
 app.MapAccountEndpoints();
 app.MapTransactionEndpoints();
+app.MapPaymentEndpoints();
 app.MapEventEndpoints();
 
 await app.RunAsync();

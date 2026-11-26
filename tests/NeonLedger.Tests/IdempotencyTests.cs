@@ -35,9 +35,9 @@ public sealed class IdempotencyTests(LedgerApp app) : IClassFixture<LedgerApp>
         var retry = await app.PostAsync(key, "Once", Debit(payer, 300), Credit(payee, 300));
 
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        Assert.False(first.Headers.Contains(TransactionEndpoints.ReplayedHeader));
+        Assert.False(first.Headers.Contains(Idempotent.ReplayedHeader));
         Assert.Equal(HttpStatusCode.Created, retry.StatusCode);
-        Assert.Equal("true", Assert.Single(retry.Headers.GetValues(TransactionEndpoints.ReplayedHeader)));
+        Assert.Equal("true", Assert.Single(retry.Headers.GetValues(Idempotent.ReplayedHeader)));
         Assert.Equal(first.Headers.Location, retry.Headers.Location);
         Assert.Equal(await first.Content.ReadAsStringAsync(Ct), await retry.Content.ReadAsStringAsync(Ct));
         Assert.Equal(700, (await app.GetAccountAsync(payer.Id)).Balance);
@@ -119,7 +119,7 @@ public sealed class IdempotencyTests(LedgerApp app) : IClassFixture<LedgerApp>
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.Created, response.StatusCode));
         var bodies = await Task.WhenAll(responses.Select(response => response.Content.ReadAsStringAsync(Ct)));
         Assert.Single(bodies.Distinct());
-        Assert.Equal(19, responses.Count(response => response.Headers.Contains(TransactionEndpoints.ReplayedHeader)));
+        Assert.Equal(19, responses.Count(response => response.Headers.Contains(Idempotent.ReplayedHeader)));
         Assert.Equal(9_900, (await app.GetAccountAsync(payer.Id)).Balance);
         Assert.Equal(100, (await app.GetAccountAsync(payee.Id)).Balance);
     }

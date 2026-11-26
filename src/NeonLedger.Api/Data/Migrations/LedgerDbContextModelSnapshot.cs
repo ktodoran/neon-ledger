@@ -45,6 +45,10 @@ namespace NeonLedger.Data.Migrations
                         .HasColumnType("char(3)")
                         .HasColumnName("currency");
 
+                    b.Property<long>("Held")
+                        .HasColumnType("bigint")
+                        .HasColumnName("held");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -62,9 +66,11 @@ namespace NeonLedger.Data.Migrations
 
                     b.ToTable("accounts", null, t =>
                         {
-                            t.HasCheckConstraint("ck_accounts_balance_not_negative", "allow_negative OR balance >= 0");
+                            t.HasCheckConstraint("ck_accounts_available_not_negative", "allow_negative OR balance - held >= 0");
 
                             t.HasCheckConstraint("ck_accounts_currency", "currency ~ '^[A-Z]{3}$'");
+
+                            t.HasCheckConstraint("ck_accounts_held_not_negative", "held >= 0");
 
                             t.HasCheckConstraint("ck_accounts_normal_balance", "normal_balance IN ('debit', 'credit')");
                         });
@@ -229,6 +235,101 @@ namespace NeonLedger.Data.Migrations
                     b.ToTable("idempotency_keys", (string)null);
                 });
 
+            modelBuilder.Entity("NeonLedger.Payments.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("DestinationAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("destination_account_id");
+
+                    b.Property<string>("Rail")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("rail");
+
+                    b.Property<string>("ReturnReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("return_reason");
+
+                    b.Property<Guid?>("ReturnTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("return_transaction_id");
+
+                    b.Property<Guid?>("SettlementTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("settlement_transaction_id");
+
+                    b.Property<Guid>("SourceAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_account_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payments");
+
+                    b.HasIndex("DestinationAccountId")
+                        .HasDatabaseName("ix_payments_destination_account_id");
+
+                    b.HasIndex("ReturnTransactionId")
+                        .HasDatabaseName("ix_payments_return_transaction_id");
+
+                    b.HasIndex("SettlementTransactionId")
+                        .HasDatabaseName("ix_payments_settlement_transaction_id");
+
+                    b.HasIndex("SourceAccountId", "Status")
+                        .HasDatabaseName("ix_payments_source_account_id_status");
+
+                    b.ToTable("payments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payments_amount_positive", "amount > 0");
+
+                            t.HasCheckConstraint("ck_payments_distinct_accounts", "source_account_id <> destination_account_id");
+
+                            t.HasCheckConstraint("ck_payments_instant_is_final", "rail <> 'instant' OR status = 'settled'");
+
+                            t.HasCheckConstraint("ck_payments_rail", "rail IN ('instant', 'ach')");
+
+                            t.HasCheckConstraint("ck_payments_return_matches_status", "(return_transaction_id IS NOT NULL) = (status = 'returned') AND (return_reason IS NOT NULL) = (status = 'returned')");
+
+                            t.HasCheckConstraint("ck_payments_settlement_matches_status", "(settlement_transaction_id IS NOT NULL) = (status IN ('settled', 'returned'))");
+
+                            t.HasCheckConstraint("ck_payments_status", "status IN ('pending', 'settled', 'canceled', 'returned')");
+                        });
+                });
+
             modelBuilder.Entity("NeonLedger.Domain.Entry", b =>
                 {
                     b.HasOne("NeonLedger.Domain.Account", null)
@@ -253,6 +354,35 @@ namespace NeonLedger.Data.Migrations
                         .HasForeignKey("NeonLedger.Domain.JournalTransaction", "ReversesTransactionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_transactions_transactions_reverses_transaction_id");
+                });
+
+            modelBuilder.Entity("NeonLedger.Payments.Payment", b =>
+                {
+                    b.HasOne("NeonLedger.Domain.Account", null)
+                        .WithMany()
+                        .HasForeignKey("DestinationAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payments_accounts_destination_account_id");
+
+                    b.HasOne("NeonLedger.Domain.JournalTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("ReturnTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payments_transactions_return_transaction_id");
+
+                    b.HasOne("NeonLedger.Domain.JournalTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("SettlementTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payments_transactions_settlement_transaction_id");
+
+                    b.HasOne("NeonLedger.Domain.Account", null)
+                        .WithMany()
+                        .HasForeignKey("SourceAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payments_accounts_source_account_id");
                 });
 
             modelBuilder.Entity("NeonLedger.Domain.JournalTransaction", b =>
