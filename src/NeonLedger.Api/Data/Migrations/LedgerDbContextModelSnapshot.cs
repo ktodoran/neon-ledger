@@ -154,6 +154,45 @@ namespace NeonLedger.Data.Migrations
                     b.ToTable("transactions", (string)null);
                 });
 
+            modelBuilder.Entity("NeonLedger.Events.EventRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<long>("Txid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("txid")
+                        .HasDefaultValueSql("(pg_current_xact_id()::text::bigint)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_events");
+
+                    b.HasIndex("Txid", "Id")
+                        .HasDatabaseName("ix_events_txid_id");
+
+                    b.ToTable("events", (string)null);
+                });
+
             modelBuilder.Entity("NeonLedger.Idempotency.IdempotencyRecord", b =>
                 {
                     b.Property<string>("Key")

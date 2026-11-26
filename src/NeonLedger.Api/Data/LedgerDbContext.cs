@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NeonLedger.Domain;
+using NeonLedger.Events;
 using NeonLedger.Idempotency;
 
 namespace NeonLedger.Data;
@@ -14,6 +15,8 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
     public DbSet<Entry> Entries => Set<Entry>();
 
     public DbSet<IdempotencyRecord> IdempotencyKeys => Set<IdempotencyRecord>();
+
+    public DbSet<EventRecord> Events => Set<EventRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +79,19 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
 
             // Serves "entries for this account, newest first".
             entry.HasIndex(e => new { e.AccountId, e.Id }).IsDescending(false, true);
+        });
+
+        modelBuilder.Entity<EventRecord>(record =>
+        {
+            record.ToTable("events");
+            record.HasKey(e => e.Id);
+            record.Property(e => e.Id).UseIdentityAlwaysColumn();
+
+            // The id of the writing transaction, as a number the feed can compare and sort.
+            record.Property(e => e.Txid).HasDefaultValueSql("(pg_current_xact_id()::text::bigint)");
+            record.Property(e => e.Type).HasMaxLength(EventRecord.MaxTypeLength);
+            record.Property(e => e.Payload).HasColumnType("jsonb");
+            record.HasIndex(e => new { e.Txid, e.Id });
         });
 
         modelBuilder.Entity<IdempotencyRecord>(record =>

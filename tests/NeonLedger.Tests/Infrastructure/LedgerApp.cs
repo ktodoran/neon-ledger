@@ -112,6 +112,40 @@ public sealed class LedgerApp(PostgresServer server) : IAsyncLifetime
     public async Task<IntegrityReport> CheckIntegrityAsync() =>
         (await Client.GetFromJsonAsync<IntegrityReport>("/v1/integrity", Json, Ct))!;
 
+    /// <summary>
+    /// Reads the event feed from the start until <paramref name="done"/> is satisfied.
+    /// The feed holds events back while an older database transaction is still open
+    /// anywhere on the server, including in other test classes, so a test waits for
+    /// its events instead of expecting them on the first read.
+    /// </summary>
+    public async Task<List<EventResponse>> ReadEventsUntilAsync(Func<List<EventResponse>, bool> done)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
+        while (true)
+        {
+            var events = new List<EventResponse>();
+            var cursor = string.Empty;
+            while (true)
+            {
+                var page = (await Client.GetFromJsonAsync<EventPage>($"/v1/events?limit=500&after={cursor}", Json, Ct))!;
+                events.AddRange(page.Items);
+                cursor = page.NextCursor;
+                if (page.Items.Count < 500)
+                {
+                    break;
+                }
+            }
+
+            if (done(events))
+            {
+                return events;
+            }
+
+            Assert.True(DateTimeOffset.UtcNow < deadline, "The expected events did not appear in the feed.");
+            await Task.Delay(50, Ct);
+        }
+    }
+
     public static async Task<T> ReadAsync<T>(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<T>(Json, Ct))!;
 

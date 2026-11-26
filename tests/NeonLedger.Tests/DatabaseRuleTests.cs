@@ -42,6 +42,9 @@ public sealed class DatabaseRuleTests(LedgerApp app) : IClassFixture<LedgerApp>
     [InlineData("UPDATE transactions SET description = 'edited'")]
     [InlineData("DELETE FROM transactions")]
     [InlineData("TRUNCATE transactions CASCADE")]
+    [InlineData("UPDATE events SET type = 'edited'")]
+    [InlineData("DELETE FROM events")]
+    [InlineData("TRUNCATE events")]
     public async Task Posted_history_cannot_be_changed_or_removed(string sql)
     {
         var payer = await app.CreateFundedAccountAsync("Payer", 1_000);

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using NeonLedger.Api;
 using NeonLedger.Data;
 using NeonLedger.Domain;
+using NeonLedger.Events;
 
 namespace NeonLedger.Ledger;
 
@@ -12,7 +14,7 @@ public sealed record PostTransaction(string Description, IReadOnlyList<EntryLine
 /// Posts transactions. Every method here must run inside a database transaction
 /// that the caller commits: the account rows are locked until then.
 /// </summary>
-public sealed class LedgerService(LedgerDbContext db, TimeProvider clock)
+public sealed class LedgerService(LedgerDbContext db, TimeProvider clock, EventLog events)
 {
     /// <summary>The largest single entry, in minor units. Keeps balances far from overflow.</summary>
     public const long MaxAmount = 100_000_000_000_000;
@@ -123,6 +125,11 @@ public sealed class LedgerService(LedgerDbContext db, TimeProvider clock)
         }
 
         db.Transactions.Add(transaction);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Saved second because the event carries the entry ids the first save assigned.
+        // Both saves are inside the caller's database transaction.
+        events.Append(EventTypes.TransactionPosted, TransactionResponse.From(transaction));
         await db.SaveChangesAsync(cancellationToken);
         return transaction;
     }

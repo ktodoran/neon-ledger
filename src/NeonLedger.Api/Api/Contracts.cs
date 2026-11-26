@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NeonLedger.Domain;
 
 namespace NeonLedger.Api;
@@ -52,6 +53,12 @@ public sealed record AccountEntryResponse(
 
 /// <summary>One page of an account's entries, newest first. Pass <c>NextBefore</c> as <c>before</c> for the next page.</summary>
 public sealed record EntryPage(IReadOnlyList<AccountEntryResponse> Items, long? NextBefore);
+
+/// <summary>One event. <c>Cursor</c> is this event's position in the feed.</summary>
+public sealed record EventResponse(string Cursor, string Type, DateTimeOffset OccurredAt, JsonElement Data);
+
+/// <summary>A page of the event feed, oldest first. Pass <c>NextCursor</c> as <c>after</c> to continue.</summary>
+public sealed record EventPage(IReadOnlyList<EventResponse> Items, string NextCursor);
 
 public sealed record AccountMismatch(Guid AccountId, long StoredBalance, long BalanceFromEntries);
 

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using NeonLedger.Api;
 using NeonLedger.Data;
+using NeonLedger.Events;
 using NeonLedger.Idempotency;
 using NeonLedger.Ledger;
 
@@ -16,6 +17,7 @@ builder.Services.AddDbContext<LedgerDbContext>((services, options) =>
 });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<LedgerService>();
+builder.Services.AddScoped<EventLog>();
 builder.Services.AddScoped<IdempotentExecutor>();
 builder.Services.AddScoped<IntegrityCheck>();
 
@@ -61,5 +63,6 @@ app.MapGet("/v1/integrity", async (IntegrityCheck check, CancellationToken cance
     .Produces<IntegrityReport>();
 app.MapAccountEndpoints();
 app.MapTransactionEndpoints();
+app.MapEventEndpoints();
 
 await app.RunAsync();
