@@ -46,6 +46,7 @@ describe('the tour', () => {
 
     await press('Settle it');
     expect(said()).toContain('Balance $130.00, held $0.00');
+    expect(within(tour).getByText(/^Where to look/).textContent).not.toContain('reversal');
     await press('Return it');
     expect(said()).toContain('Returned · R01');
     expect(said()).toContain('Balance is back to $250.00');
@@ -101,6 +102,21 @@ describe('moving money', () => {
     expect(outcomeIn(composer).textContent).toContain('201 Created · replayed');
     expect(within(panel('Journal')).getAllByText('Paycheck')).toHaveLength(1);
     expect(within(account('Jordan checking')).getAllByText('$250.00')).toHaveLength(2);
+  });
+
+  it('starts with two accounts in the same currency, so the first request is not refused', async () => {
+    const store = createConsoleStore();
+    await store.reset();
+    // The newest customer account, and so the first one in the list.
+    await store.run((ledger) =>
+      ledger.openAccount({ name: 'Euros', currency: 'EUR', normalBalance: 'credit' }),
+    );
+    render(<App store={store} />);
+    const composer = panel('Move money');
+    const chosen = (label) => within(composer).getByLabelText(label).selectedOptions[0].textContent;
+
+    expect(chosen('From')).toContain('ACH settlement');
+    expect(chosen('To')).toContain('Jordan checking');
   });
 
   it('gives a changed request a new key', async () => {

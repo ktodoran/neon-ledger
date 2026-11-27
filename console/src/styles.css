@@ -330,11 +330,18 @@ a:hover {
   color: var(--amber);
 }
 
+/* As wide as the grid's content below it, at every window width. */
+.books-report,
+.connect {
+  width: calc(100% - 56px);
+  max-width: 1624px;
+  margin: 16px auto 0;
+}
+
 .books-report {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  margin: 16px 28px 0;
 }
 
 .books-report .outcome {
@@ -353,13 +360,10 @@ a:hover {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 20px 32px;
   align-items: start;
-  max-width: 1680px;
-  margin: 16px auto 0;
   padding: 20px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--surface);
-  width: calc(100% - 56px);
 }
 
 .connect h2 {
@@ -1125,13 +1129,13 @@ thead th {
     margin-left: 0;
   }
 
-  .books-report {
-    margin: 16px 16px 0;
+  .books-report,
+  .connect {
+    width: calc(100% - 32px);
   }
 
   .connect {
     grid-template-columns: minmax(0, 1fr);
-    width: calc(100% - 32px);
   }
 
   .foot {

@@ -74,12 +74,19 @@ export function Tour({ store, mode, busy, act, onStart }) {
 
   async function perform() {
     const outcome = await act(() => action.run({ store, cast: tour.cast, memory: tour.memory }));
-    setTour((current) => ({ ...current, done: current.done + 1, outcome }));
+    setTour((current) => ({
+      ...current,
+      done: current.done + 1,
+      outcome,
+      look: action.look ?? step.look,
+    }));
   }
 
   function advance() {
     setTour((current) =>
-      last ? { phase: 'finished' } : { ...current, step: current.step + 1, done: 0, outcome: null },
+      last
+        ? { phase: 'finished' }
+        : { ...current, step: current.step + 1, done: 0, outcome: null, look: null },
     );
   }
 
@@ -108,7 +115,7 @@ export function Tour({ store, mode, busy, act, onStart }) {
         )}
       </div>
       <Outcome outcome={tour.outcome} />
-      {tour.outcome && <p className="tour-look">Where to look: {step.look}</p>}
+      {tour.look && <p className="tour-look">Where to look: {tour.look}</p>}
     </section>
   );
 }

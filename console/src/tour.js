@@ -148,6 +148,7 @@ export const TOUR = [
     actions: [
       {
         label: 'Settle it',
+        look: 'Jordan checking: the money has left and nothing is held. The settlement is at the top of the journal.',
         async run({ store, cast, memory }) {
           const result = await store.run(settle(memory.paymentId, newKey('settle')));
           const { accounts, jordan } = jordanAfter(store, cast);

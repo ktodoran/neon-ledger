@@ -32,21 +32,29 @@ const RAILS = { ach: 'ACH · settles later', instant: 'Instant' };
 /**
  * The accounts a kind of movement starts from and lands in, until the form is
  * told otherwise. Money leaves the customer who has the most to spend, so the
- * first thing a visitor sends is not refused for want of funds.
+ * first thing a visitor sends is not refused for want of funds, and it lands
+ * in an account of the same currency, so it is not refused for that either.
  */
 function defaults(kind, accounts) {
-  const settlement = accounts.find((account) => account.allowNegative);
+  const settlements = accounts.filter((account) => account.allowNegative);
   const customers = accounts.filter((account) => !account.allowNegative);
+  const matching = (candidates, from, except) =>
+    candidates.find((account) => account !== except && account.currency === from?.currency) ??
+    candidates.find((account) => account !== except);
+
+  if (kind === 'deposit') {
+    const from = settlements[0];
+    return { from: from?.id, to: matching(customers, from)?.id };
+  }
   const richest = customers.reduce(
     (best, account) => (best === undefined || account.available > best.available ? account : best),
     undefined,
   );
-  if (kind === 'deposit') return { from: settlement?.id, to: customers[0]?.id };
-  if (kind === 'transfer') {
-    const other = customers.find((account) => account !== richest) ?? settlement;
-    return { from: richest?.id, to: other?.id };
-  }
-  return { from: richest?.id, to: settlement?.id };
+  const to =
+    kind === 'transfer'
+      ? (matching(customers, richest, richest) ?? matching(settlements, richest))
+      : matching(settlements, richest);
+  return { from: richest?.id, to: to?.id };
 }
 
 function Segments({ legend, name, options, value, onChange }) {
