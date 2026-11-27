@@ -18,6 +18,9 @@ public static partial class AccountEndpoints
         accounts.MapPost("/", CreateAsync)
             .Produces<AccountResponse>(StatusCodes.Status201Created)
             .ProducesValidationProblem();
+        accounts.MapGet("/", ListAsync)
+            .Produces<AccountPage>()
+            .ProducesValidationProblem();
         accounts.MapGet("/{id:guid}", GetAsync)
             .WithName("GetAccount")
             .Produces<AccountResponse>()
@@ -64,6 +67,48 @@ public static partial class AccountEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.CreatedAtRoute("GetAccount", new { id = account.Id }, AccountResponse.From(account));
+    }
+
+    private static async Task<IResult> ListAsync(
+        LedgerDbContext db,
+        CancellationToken cancellationToken,
+        int limit = DefaultPageSize,
+        string? after = null)
+    {
+        var errors = new Dictionary<string, string[]>();
+        Guid? cursor = null;
+        if (!string.IsNullOrEmpty(after))
+        {
+            if (Guid.TryParse(after, out var id))
+            {
+                cursor = id;
+            }
+            else
+            {
+                errors["after"] = ["after must be an account id returned by this endpoint."];
+            }
+        }
+
+        if (limit is < 1 or > MaxPageSize)
+        {
+            errors["limit"] = [$"limit must be between 1 and {MaxPageSize}."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Problems.Validation(errors);
+        }
+
+        // Keyset pagination on the primary key. Ids are version 7 UUIDs, which PostgreSQL
+        // orders by the time inside them, so this is also the order the accounts were opened in.
+        var rows = await db.Accounts.AsNoTracking()
+            .Where(a => cursor == null || a.Id > cursor)
+            .OrderBy(a => a.Id)
+            .Take(limit + 1)
+            .ToListAsync(cancellationToken);
+        var hasMore = rows.Count > limit;
+        var items = (hasMore ? rows[..limit] : rows).Select(AccountResponse.From).ToList();
+        return Results.Ok(new AccountPage(items, hasMore ? items[^1].Id : null));
     }
 
     private static async Task<IResult> GetAsync(Guid id, LedgerDbContext db, CancellationToken cancellationToken)

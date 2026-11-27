@@ -23,6 +23,19 @@ builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<IdempotentExecutor>();
 builder.Services.AddScoped<IntegrityCheck>();
 
+// Which web pages may call this service from a browser. None, unless configured:
+// the service has no authentication, so a page that can reach it can post to it.
+var browserOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
+    .WithOrigins(browserOrigins)
+    .WithMethods(HttpMethods.Get, HttpMethods.Post)
+    .WithHeaders("Content-Type", Idempotent.KeyHeader)
+    .WithExposedHeaders(Idempotent.ReplayedHeader, "Location")));
+
+// A request that cannot be read is the caller's mistake in every environment. The default
+// in Development is to throw, which turns it into a 500.
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
+
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -52,6 +65,7 @@ if (migrateOnly)
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseCors();
 
 app.MapOpenApi();
 app.MapGet("/health", async (LedgerDbContext db, CancellationToken cancellationToken) =>

@@ -30,6 +30,9 @@ public sealed record AccountResponse(
             account.CreatedAt);
 }
 
+/// <summary>A page of accounts, oldest first. <see cref="NextAfter"/> is null on the last page.</summary>
+public sealed record AccountPage(IReadOnlyList<AccountResponse> Items, Guid? NextAfter);
+
 public sealed record EntryRequest(Guid AccountId, Direction? Direction, long Amount);
 
 public sealed record PostTransactionRequest(string? Description, IReadOnlyList<EntryRequest?>? Entries);
