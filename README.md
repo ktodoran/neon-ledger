@@ -207,7 +207,7 @@ A return is refused if the money is no longer in the destination account. The pa
 | Method and path | What it does |
 |---|---|
 | `POST /v1/accounts` | Open an account: `name`, `currency`, `normalBalance` (`debit` or `credit`), `allowNegative`. |
-| `GET /v1/accounts?limit=&after=` | The accounts, in the order they were opened. Pass `nextAfter` back as `after`. |
+| `GET /v1/accounts?limit=&after=` | The accounts, oldest first. Pass `nextAfter` back as `after`. |
 | `GET /v1/accounts/{id}` | The account with its `balance`, `held` and `available`. |
 | `GET /v1/accounts/{id}/entries?limit=&before=` | The account's entries, newest first, each with the balance after it. Keyset pagination. |
 | `POST /v1/transactions` | Post a transaction of two or more entries. Requires `Idempotency-Key`. |

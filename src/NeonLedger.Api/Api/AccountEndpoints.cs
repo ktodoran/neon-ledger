@@ -100,7 +100,7 @@ public static partial class AccountEndpoints
         }
 
         // Keyset pagination on the primary key. Ids are version 7 UUIDs, which PostgreSQL
-        // orders by the time inside them, so this is also the order the accounts were opened in.
+        // orders by the time inside them, so this is oldest first, to the millisecond.
         var rows = await db.Accounts.AsNoTracking()
             .Where(a => cursor == null || a.Id > cursor)
             .OrderBy(a => a.Id)

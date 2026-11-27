@@ -10,24 +10,33 @@ public sealed class AccountListingTests(LedgerApp app) : IClassFixture<LedgerApp
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Accounts_are_listed_in_the_order_they_were_opened_and_page_without_gaps_or_repeats()
+    public async Task Accounts_are_listed_oldest_first_and_page_without_gaps_or_repeats()
     {
-        var names = new[] { "First", "Second", "Third", "Fourth", "Fifth" };
         var opened = new List<AccountResponse>();
-        foreach (var name in names)
+        foreach (var name in new[] { "First", "Second", "Third", "Fourth", "Fifth" })
         {
             opened.Add(await app.CreateAccountAsync(name));
         }
 
-        var first = await GetPageAsync("/v1/accounts?limit=2");
-        var second = await GetPageAsync($"/v1/accounts?limit=2&after={first.NextAfter}");
-        var third = await GetPageAsync($"/v1/accounts?limit=2&after={second.NextAfter}");
+        // Other tests in this class open accounts in the same database, before or after
+        // these, so the test reads every page and looks for its own accounts among them.
+        var pages = new List<AccountPage>();
+        Guid? after = null;
+        do
+        {
+            pages.Add(await GetPageAsync($"/v1/accounts?limit=2&after={after}"));
+            after = pages[^1].NextAfter;
+        }
+        while (after is not null);
 
-        Assert.Equal(["First", "Second"], first.Items.Select(account => account.Name));
-        Assert.Equal(["Third", "Fourth"], second.Items.Select(account => account.Name));
-        Assert.Equal(["Fifth"], third.Items.Select(account => account.Name));
-        Assert.Null(third.NextAfter);
-        Assert.Equal(opened[0], first.Items[0]);
+        var listed = pages.SelectMany(page => page.Items).ToList();
+        Assert.All(pages.SkipLast(1), page => Assert.Equal(2, page.Items.Count));
+        Assert.Equal(listed.Count, listed.Select(account => account.Id).Distinct().Count());
+        Assert.All(opened, account => Assert.Contains(account, listed));
+        // Ids carry the opening time to the millisecond, so two accounts opened within
+        // one millisecond may come back in either order. Nothing older follows anything newer.
+        var openedAt = listed.Select(account => account.CreatedAt.ToUnixTimeMilliseconds()).ToList();
+        Assert.Equal(openedAt.Order(), openedAt);
     }
 
     [Fact]
