@@ -18,6 +18,20 @@ Built: the ledger core, payments with two lifecycles (instant, and ACH-style pen
 
 It is not a payments product. There is no authentication, and nothing here talks to a bank or a payment network: settlement and returns happen when a caller says so (see [Known limits](#known-limits) and [Roadmap](#roadmap)). It has not run in production.
 
+## The console
+
+![The console, part way through its tour: an ACH payment is pending and $120.00 of Jordan's $250.00 is held](docs/console.png)
+
+A browser console for the ledger, in [`console/`](console/): move money, retry a request, hold funds, and try to break the books, with a six-step tour.
+
+```bash
+cd console
+npm install
+npm run dev      # http://localhost:5173
+```
+
+It runs against a simulation of the ledger written in JavaScript, in the browser, so it needs no server. The simulation follows the same rules and answers with the same shapes and codes as the API, but it is a second implementation: it shows what the ledger does, and the tests below are what show that the real one does it. Connecting the console to a running ledger is not built yet.
+
 ## The rules, and where each one is enforced
 
 The important rules are enforced twice: in the application, where a violation becomes a clear error, and in PostgreSQL, where it holds for every writer. The database tests write SQL directly, around the application, to prove the second layer on its own.
@@ -249,7 +263,7 @@ dotnet test
 
 Most tests drive the real application over HTTP, in process, against a real PostgreSQL. By default the run starts a throwaway PostgreSQL container, so Docker is the only requirement. To use a server you already have, set `NEON_LEDGER_TEST_POSTGRES` to a connection string for a user that may create databases. Each test class gets its own freshly migrated database.
 
-CI runs formatting, a build with warnings as errors, and the tests on every push.
+CI runs formatting, a build with warnings as errors, and the tests on every push. The console has its own job: lint, formatting, its tests and a build.
 
 ### Changing the schema
 

@@ -21,3 +21,21 @@ jobs:
       - run: dotnet build --no-restore --configuration Release
       # The tests start their own PostgreSQL container; the runner already has Docker.
       - run: dotnet test --no-build --configuration Release
+
+  console:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
