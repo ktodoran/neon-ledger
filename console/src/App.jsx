@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
-import { checkBooks } from './actions.js';
 import { Accounts } from './components/Accounts.jsx';
 import { BreakIt } from './components/BreakIt.jsx';
 import { Composer } from './components/Composer.jsx';
+import { Connect } from './components/Connect.jsx';
 import { EventFeed } from './components/EventFeed.jsx';
 import { Journal } from './components/Journal.jsx';
 import { Outcome } from './components/Outcome.jsx';
@@ -10,14 +10,19 @@ import { Payments } from './components/Payments.jsx';
 import { TopBar } from './components/TopBar.jsx';
 import { Tour } from './components/Tour.jsx';
 import { readFeed } from './ledger/view.js';
-import { describeBooks } from './outcome.js';
+import { describeBooks, outcomeOf, succeeded } from './outcome.js';
 
 const REPOSITORY = 'https://github.com/ktodoran/neon-ledger';
 
-export function App({ store }) {
+/**
+ * `failedConnection` is set when the page was opened with a ledger address it
+ * could not reach: { address, failed: status }.
+ */
+export function App({ store, failedConnection = null }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [busy, setBusy] = useState(false);
   const [books, setBooks] = useState(null);
+  const [connecting, setConnecting] = useState(failedConnection !== null);
   // A new ledger gets new panels: forms and outcomes from the old one are dropped.
   const [generation, setGeneration] = useState(0);
   const [tourRun, setTourRun] = useState(0);
@@ -33,28 +38,50 @@ export function App({ store }) {
   }, []);
 
   const { transactions, payments } = useMemo(() => readFeed(snapshot.events), [snapshot.events]);
-  // Customers first, then the settlement account they all move money through.
+  // Customers first, then the settlement accounts they move money through, and
+  // the newest of each at the top. The ledger lists accounts oldest first.
   const accounts = useMemo(
-    () => [...snapshot.accounts].sort((a, b) => Number(a.allowNegative) - Number(b.allowNegative)),
+    () =>
+      [...snapshot.accounts]
+        .reverse()
+        .sort((a, b) => Number(a.allowNegative) - Number(b.allowNegative)),
     [snapshot.accounts],
   );
 
-  async function check() {
-    const result = await act(() => store.run(checkBooks()));
-    setBooks(describeBooks(result.body));
-  }
-
-  /** Starts a new ledger. Returns the seed accounts' ids, which the tour needs. */
-  const reset = useCallback(async () => {
-    const cast = await act(() => store.reset());
+  const fresh = useCallback(() => {
     setBooks(null);
     setGeneration((current) => current + 1);
-    return cast;
-  }, [act, store]);
+  }, []);
 
+  async function check() {
+    const result = await act(() => store.checkBooks());
+    setBooks(
+      succeeded(result) ? describeBooks(result.body) : outcomeOf(result, snapshot.accounts, ''),
+    );
+  }
+
+  /** Gives the tour its accounts and clears the panels. Null if the ledger refused. */
+  const beginTour = useCallback(async () => {
+    const cast = await act(() => store.begin());
+    fresh();
+    return cast;
+  }, [act, fresh, store]);
+
+  /** A new simulation, whether the last ledger was one or not. */
   async function startOver() {
-    await reset();
+    await act(() => store.reset());
+    fresh();
     setTourRun((current) => current + 1);
+  }
+
+  async function connect(address) {
+    const result = await act(() => store.connect(address));
+    if (result.connected) {
+      setConnecting(false);
+      fresh();
+      setTourRun((current) => current + 1);
+    }
+    return result;
   }
 
   if (!snapshot.ready) {
@@ -65,9 +92,26 @@ export function App({ store }) {
     );
   }
 
+  const connected = snapshot.mode === 'connected';
+
   return (
     <div className="app">
-      <TopBar snapshot={snapshot} busy={busy} onCheck={check} onReset={startOver} />
+      <TopBar
+        snapshot={snapshot}
+        busy={busy}
+        onCheck={check}
+        onReset={startOver}
+        onConnect={() => setConnecting(true)}
+        onDisconnect={startOver}
+      />
+      {connecting && !connected && (
+        <Connect
+          busy={busy}
+          initial={failedConnection}
+          onConnect={connect}
+          onClose={() => setConnecting(false)}
+        />
+      )}
       {books && (
         <div className="books-report">
           <Outcome outcome={books} />
@@ -87,7 +131,14 @@ export function App({ store }) {
           />
         </div>
         <div className="col col-work">
-          <Tour key={tourRun} store={store} busy={busy} act={act} onStart={reset} />
+          <Tour
+            key={tourRun}
+            store={store}
+            mode={snapshot.mode}
+            busy={busy}
+            act={act}
+            onStart={beginTour}
+          />
           <Composer
             key={`composer-${String(generation)}`}
             store={store}
@@ -106,7 +157,8 @@ export function App({ store }) {
           <BreakIt
             key={`breakit-${String(generation)}`}
             store={store}
-            snapshot={snapshot}
+            accounts={accounts}
+            mode={snapshot.mode}
             busy={busy}
             act={act}
           />
@@ -118,11 +170,20 @@ export function App({ store }) {
       </main>
 
       <footer className="foot">
-        <p>
-          This page runs a simulation of the ledger, written in JavaScript, in your browser. Nothing
-          leaves it and nothing is saved. The real Neon Ledger is a .NET service on PostgreSQL:{' '}
-          <a href={REPOSITORY}>source on GitHub</a>.
-        </p>
+        {connected ? (
+          <p>
+            This page is sending requests to the Neon Ledger at {snapshot.address}, a .NET service
+            on PostgreSQL, and reading it again every few seconds. What you post stays in that
+            ledger. <a href={REPOSITORY}>Source on GitHub</a>.
+          </p>
+        ) : (
+          <p>
+            This page runs a simulation of the ledger, written in JavaScript, in your browser.
+            Nothing leaves it and nothing is saved. The real Neon Ledger is a .NET service on
+            PostgreSQL, and the console can connect to one running on your machine:{' '}
+            <a href={REPOSITORY}>source on GitHub</a>.
+          </p>
+        )}
       </footer>
     </div>
   );

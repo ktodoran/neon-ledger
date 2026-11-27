@@ -14,7 +14,7 @@ I spent four years building payment and digital banking systems in C#. None of t
 
 ## Status
 
-Built: the ledger core, payments with two lifecycles (instant, and ACH-style pending → settled → returned), and an event feed. Each is complete for what it claims below.
+Built: the ledger core, payments with two lifecycles (instant, and ACH-style pending → settled → returned), an event feed, and a browser console that runs against a simulation or against the service itself. Each is complete for what it claims below.
 
 It is not a payments product. There is no authentication, and nothing here talks to a bank or a payment network: settlement and returns happen when a caller says so (see [Known limits](#known-limits) and [Roadmap](#roadmap)). It has not run in production.
 
@@ -22,15 +22,20 @@ It is not a payments product. There is no authentication, and nothing here talks
 
 ![The console, part way through its tour: an ACH payment is pending and $120.00 of Jordan's $250.00 is held](docs/console.png)
 
-A browser console for the ledger, in [`console/`](console/): move money, retry a request, hold funds, and try to break the books, with a six-step tour.
+A browser console for the ledger, in [`console/`](console/): move money, retry a request, hold funds, and try to break the books, with a six-step tour. It is published at **[ktodoran.github.io/neon-ledger](https://ktodoran.github.io/neon-ledger/)**.
+
+It opens on a simulation of the ledger written in JavaScript, in the browser, so there is nothing to install to look at it. The simulation is a second implementation of the rules, not the ledger. Two things keep that honest:
+
+- **It can be pointed at the real thing.** "Connect a real ledger" sends the same requests to a ledger running on your machine (see [Run it](#run-it)), and the tour and the three "try to break it" trials run against that, including a race between two real concurrent requests.
+- **It is checked against the real thing.** One script of 35 requests is run against the simulation and against the real API, and CI fails if they answer differently in any status code, refusal code, message, balance or event.
+
+To run the console yourself:
 
 ```bash
 cd console
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173, or add ?ledger=http://localhost:5080 to open it connected
 ```
-
-It runs against a simulation of the ledger written in JavaScript, in the browser, so it needs no server. The simulation follows the same rules and answers with the same shapes and codes as the API, but it is a second implementation: it shows what the ledger does, and the tests below are what show that the real one does it. Connecting the console to a running ledger is not built yet.
 
 ## The rules, and where each one is enforced
 
@@ -70,6 +75,8 @@ export ConnectionStrings__Ledger="Host=localhost;Port=5434;Database=neon_ledger;
 ```
 
 The OpenAPI document is at `http://localhost:5080/openapi/v1.json`.
+
+**Calling it from a web page.** A browser will only let a page call the service if the page's origin is listed under `Cors:AllowedOrigins`. In production configuration the list is empty. In development (`dotnet run`) it holds the console's addresses: `http://localhost:5173`, `http://localhost:4173` and `https://ktodoran.github.io`. To allow another, set `Cors__AllowedOrigins__0` and so on. The service has no authentication, so treat this list as the list of pages that may post to your ledger.
 
 ### A deposit, a retry and a refusal
 
@@ -200,6 +207,7 @@ A return is refused if the money is no longer in the destination account. The pa
 | Method and path | What it does |
 |---|---|
 | `POST /v1/accounts` | Open an account: `name`, `currency`, `normalBalance` (`debit` or `credit`), `allowNegative`. |
+| `GET /v1/accounts?limit=&after=` | The accounts, in the order they were opened. Pass `nextAfter` back as `after`. |
 | `GET /v1/accounts/{id}` | The account with its `balance`, `held` and `available`. |
 | `GET /v1/accounts/{id}/entries?limit=&before=` | The account's entries, newest first, each with the balance after it. Keyset pagination. |
 | `POST /v1/transactions` | Post a transaction of two or more entries. Requires `Idempotency-Key`. |
@@ -263,7 +271,11 @@ dotnet test
 
 Most tests drive the real application over HTTP, in process, against a real PostgreSQL. By default the run starts a throwaway PostgreSQL container, so Docker is the only requirement. To use a server you already have, set `NEON_LEDGER_TEST_POSTGRES` to a connection string for a user that may create databases. Each test class gets its own freshly migrated database.
 
-CI runs formatting, a build with warnings as errors, and the tests on every push. The console has its own job: lint, formatting, its tests and a build.
+CI runs formatting, a build with warnings as errors, and the tests on every push. The console has its own job: lint, formatting, its tests and a build. A third job starts the ledger and runs the console's parity script against it:
+
+```bash
+cd console && npm run parity    # needs the ledger running on localhost:5080
+```
 
 ### Changing the schema
 

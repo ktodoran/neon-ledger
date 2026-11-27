@@ -43,7 +43,8 @@ function defaults(kind, accounts) {
   );
   if (kind === 'deposit') return { from: settlement?.id, to: customers[0]?.id };
   if (kind === 'transfer') {
-    return { from: richest?.id, to: customers.find((account) => account !== richest)?.id };
+    const other = customers.find((account) => account !== richest) ?? settlement;
+    return { from: richest?.id, to: other?.id };
   }
   return { from: richest?.id, to: settlement?.id };
 }
@@ -162,6 +163,18 @@ export function Composer({ store, accounts, busy, act }) {
     const request = (key) => (form.kind === 'payment' ? pay(details, key) : move(details, key));
     setSent({ request, key: form.key });
     await send(request, form.key);
+  }
+
+  const deposit = defaults('deposit', accounts);
+  if (deposit.from === undefined || deposit.to === undefined) {
+    return (
+      <Panel title="Move money" className="composer">
+        <p className="empty">
+          Moving money takes a settlement account and a customer account. Open them on the left, or
+          start the tour, which opens its own.
+        </p>
+      </Panel>
+    );
   }
 
   return (

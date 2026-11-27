@@ -9,6 +9,7 @@ import { formatMoney } from './lib/money.js';
 const REASONS = { 200: 'OK', 201: 'Created' };
 
 export function labelOf(result) {
+  if (result.status === 0) return 'No answer';
   const base =
     result.status < 400
       ? `${String(result.status)} ${REASONS[result.status] ?? ''}`.trim()
@@ -28,6 +29,8 @@ function named(text, accounts) {
 function refusal(result, accounts) {
   const { body } = result;
   switch (body?.code) {
+    case 'ledger_unreachable':
+      return `${body.detail} Check that it is still running, then try again.`;
     case 'insufficient_funds':
       return `Refused. ${named(body.detail, accounts).replace(/^Account /, '')} Nothing moved.`;
     case 'validation_failed':

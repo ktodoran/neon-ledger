@@ -456,8 +456,8 @@ export function createSimulatedLedger({
       );
     },
 
-    async events(after = '0') {
-      const from = Number(after) || 0;
+    async events(after = null) {
+      const from = Number(after ?? 0) || 0;
       const items = events.slice(from).map(copy);
       return { status: 200, body: { items, nextCursor: String(from + items.length) } };
     },

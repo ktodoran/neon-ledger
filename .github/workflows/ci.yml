@@ -39,3 +39,36 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
+
+  # Holds the console's simulation to the real ledger: one script of requests is
+  # run against both, and any difference in what they answer fails the build.
+  parity:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: docker compose up -d --wait
+      - run: dotnet run --project src/NeonLedger.Api -- migrate
+      - name: Start the ledger
+        run: |
+          dotnet run --project src/NeonLedger.Api > ledger.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --silent --fail http://localhost:5080/health && exit 0
+            sleep 2
+          done
+          cat ledger.log
+          exit 1
+      - run: npm ci
+        working-directory: console
+      - run: npm run parity
+        working-directory: console

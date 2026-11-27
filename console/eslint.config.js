@@ -22,4 +22,10 @@ export default [
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z]' }],
     },
   },
+  {
+    // Run by Node from a terminal, where printing is the point.
+    files: ['scripts/**'],
+    languageOptions: { globals: globals.node },
+    rules: { 'no-console': 'off' },
+  },
 ];

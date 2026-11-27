@@ -21,12 +21,16 @@ function Dots({ step }) {
  * The guided tour. Starting it starts a new ledger, so every step begins from
  * a state the tour knows.
  */
-export function Tour({ store, busy, act, onStart }) {
+export function Tour({ store, mode, busy, act, onStart }) {
   const [tour, setTour] = useState(INTRO);
 
   async function start() {
     const cast = await onStart();
-    setTour({ phase: 'running', step: 0, done: 0, outcome: null, cast, memory: {} });
+    setTour(
+      cast === null
+        ? { phase: 'intro', failed: true }
+        : { phase: 'running', step: 0, done: 0, outcome: null, cast, memory: {} },
+    );
   }
 
   if (tour.phase !== 'running') {
@@ -42,7 +46,20 @@ export function Tour({ store, busy, act, onStart }) {
             {finished
               ? 'Everything below still works. Move money yourself, or try to break the books.'
               : 'Deposit money, retry a request, hold funds, overspend, settle and return a payment, then check that the books still balance. About two minutes.'}
+            {!finished &&
+              mode === 'connected' &&
+              ' On this ledger the tour opens three new accounts and leaves the rest alone.'}
           </p>
+          {tour.failed && (
+            <Outcome
+              outcome={{
+                label: 'Not started',
+                tone: 'warn',
+                message:
+                  'The ledger did not open the tour’s accounts. Check that it is still running, then try again.',
+              }}
+            />
+          )}
         </div>
         <button type="button" className="btn btn-primary" onClick={start} disabled={busy}>
           {finished ? 'Run the tour again' : 'Start the tour'}

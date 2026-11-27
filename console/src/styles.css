@@ -293,8 +293,9 @@ a:hover {
 
 .mode {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 0 6px;
 }
 
 .books {
@@ -339,6 +340,56 @@ a:hover {
 .books-report .outcome {
   flex: 1;
   margin: 0;
+}
+
+.books-unknown {
+  color: var(--muted);
+}
+
+/* ---------- connect ---------- */
+
+.connect {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px 32px;
+  align-items: start;
+  max-width: 1680px;
+  margin: 16px auto 0;
+  padding: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  width: calc(100% - 56px);
+}
+
+.connect h2 {
+  font: 600 16px/1.3 var(--display);
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.connect-about p {
+  max-width: 64ch;
+}
+
+.connect-about .hint {
+  margin-top: 8px;
+}
+
+.connect pre {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--sunk);
+  overflow-x: auto;
+  font: 400 12.5px/1.7 var(--mono);
+  color: #d5dae0;
+}
+
+.connect form {
+  display: grid;
+  gap: 12px;
 }
 
 /* ---------- layout ---------- */
@@ -976,11 +1027,18 @@ thead th {
   color: var(--muted);
 }
 
+.feed-list {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  column-gap: 10px;
+}
+
+/* Rows share the list's columns, so cursors of any width stay aligned. */
 .feed-list li {
   display: grid;
-  grid-template-columns: 30px max-content minmax(0, 1fr);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: baseline;
-  gap: 10px;
   padding: 7px 0;
   border-top: 1px solid var(--line);
   font-size: 13px;
@@ -994,6 +1052,7 @@ thead th {
 .cursor {
   color: var(--muted);
   text-align: right;
+  white-space: nowrap;
 }
 
 .event-type {
@@ -1068,6 +1127,11 @@ thead th {
 
   .books-report {
     margin: 16px 16px 0;
+  }
+
+  .connect {
+    grid-template-columns: minmax(0, 1fr);
+    width: calc(100% - 32px);
   }
 
   .foot {

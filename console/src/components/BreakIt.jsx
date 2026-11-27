@@ -14,9 +14,8 @@ function raceAmount(available) {
   return most > 0 ? most : available;
 }
 
-export function BreakIt({ store, snapshot, busy, act }) {
+export function BreakIt({ store, accounts, mode, busy, act }) {
   const [outcome, setOutcome] = useState(null);
-  const { accounts, mode } = snapshot;
   const settlement = accounts.find((account) => account.allowNegative);
   const customers = accounts.filter((account) => !account.allowNegative);
   const richest = customers.reduce(

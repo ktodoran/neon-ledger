@@ -26,4 +26,3 @@ export const pay =
 export const settle = (id, key) => (ledger) => ledger.settlePayment(id, key);
 export const cancel = (id, key) => (ledger) => ledger.cancelPayment(id, key);
 export const giveBack = (id, reason, key) => (ledger) => ledger.returnPayment(id, reason, key);
-export const checkBooks = () => (ledger) => ledger.integrity();

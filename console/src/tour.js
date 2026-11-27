@@ -5,7 +5,7 @@
 // accounts afterwards. If the ledger answers differently than the step
 // expects, the tour shows that answer instead.
 
-import { checkBooks, giveBack, move, pay, settle } from './actions.js';
+import { giveBack, move, pay, settle } from './actions.js';
 import { newKey } from './lib/keys.js';
 import { formatMoney } from './lib/money.js';
 import { describeBooks, outcomeOf, succeeded } from './outcome.js';
@@ -178,14 +178,16 @@ export const TOUR = [
   {
     title: 'Check the books',
     body: 'The ledger recomputes every balance from its entries and every hold from its pending payments, and reports any that disagree with what is stored.',
-    look: 'The top bar says the same thing after every request.',
+    look: 'The top bar now carries the result.',
     next: 'Finish the tour',
     actions: [
       {
         label: 'Check the books',
         async run({ store }) {
-          const result = await store.run(checkBooks());
-          return describeBooks(result.body);
+          const result = await store.checkBooks();
+          return succeeded(result)
+            ? describeBooks(result.body)
+            : outcomeOf(result, store.getSnapshot().accounts, '');
         },
       },
     ],
