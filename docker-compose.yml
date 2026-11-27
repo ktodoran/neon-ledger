@@ -1,5 +1,7 @@
-# PostgreSQL for local development. Host port 5433, so it does not collide with a
-# database you already run on 5432.
+# PostgreSQL for local development, reachable from this machine only. Host port
+# 5433, so it does not collide with a database you already run on 5432. If 5433
+# is taken too, set NEON_LEDGER_DB_PORT, and point the API at the same port with
+# ConnectionStrings__Ledger (see "Run it" in the README).
 services:
   postgres:
     image: postgres:17
@@ -8,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ledger
       POSTGRES_DB: neon_ledger
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${NEON_LEDGER_DB_PORT:-5433}:5432"
     volumes:
       - neon-ledger-data:/var/lib/postgresql/data
     healthcheck:

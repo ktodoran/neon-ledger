@@ -48,6 +48,13 @@ dotnet run --project src/NeonLedger.Api -- migrate   # create the schema
 dotnet run --project src/NeonLedger.Api              # http://localhost:5080
 ```
 
+If something on your machine already uses port 5433, pick another for both the database and the API before running the commands above:
+
+```bash
+export NEON_LEDGER_DB_PORT=5434
+export ConnectionStrings__Ledger="Host=localhost;Port=5434;Database=neon_ledger;Username=ledger;Password=ledger"
+```
+
 The OpenAPI document is at `http://localhost:5080/openapi/v1.json`.
 
 ### A deposit, a retry and a refusal
