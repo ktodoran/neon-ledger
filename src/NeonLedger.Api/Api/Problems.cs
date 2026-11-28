@@ -28,6 +28,8 @@ public static class Problems
     private static string Type(int status) => status switch
     {
         StatusCodes.Status400BadRequest => "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+        StatusCodes.Status401Unauthorized => "https://tools.ietf.org/html/rfc9110#section-15.5.2",
+        StatusCodes.Status403Forbidden => "https://tools.ietf.org/html/rfc9110#section-15.5.4",
         StatusCodes.Status404NotFound => "https://tools.ietf.org/html/rfc9110#section-15.5.5",
         StatusCodes.Status409Conflict => "https://tools.ietf.org/html/rfc9110#section-15.5.10",
         StatusCodes.Status422UnprocessableEntity => "https://tools.ietf.org/html/rfc9110#section-15.5.21",
@@ -37,6 +39,8 @@ public static class Problems
     private static string Title(int status) => status switch
     {
         StatusCodes.Status400BadRequest => "Bad request",
+        StatusCodes.Status401Unauthorized => "Unauthenticated",
+        StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "Not found",
         StatusCodes.Status409Conflict => "Conflict",
         StatusCodes.Status422UnprocessableEntity => "Request refused",

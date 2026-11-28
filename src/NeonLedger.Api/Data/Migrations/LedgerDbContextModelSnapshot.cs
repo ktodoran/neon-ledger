@@ -22,6 +22,73 @@ namespace NeonLedger.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("NeonLedger.Access.ApiKey", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("char(12)")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Access")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("access");
+
+                    b.Property<Guid>("CallerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caller_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .HasColumnName("secret_hash");
+
+                    b.HasKey("Id")
+                        .HasName("pk_api_keys");
+
+                    b.HasIndex("CallerId")
+                        .HasDatabaseName("ix_api_keys_caller_id");
+
+                    b.ToTable("api_keys", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_api_keys_access", "access IN ('read', 'write')");
+                        });
+                });
+
+            modelBuilder.Entity("NeonLedger.Access.Caller", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_callers");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_callers_name");
+
+                    b.ToTable("callers", (string)null);
+                });
+
             modelBuilder.Entity("NeonLedger.Domain.Account", b =>
                 {
                     b.Property<Guid>("Id")
@@ -201,6 +268,10 @@ namespace NeonLedger.Data.Migrations
 
             modelBuilder.Entity("NeonLedger.Idempotency.IdempotencyRecord", b =>
                 {
+                    b.Property<Guid>("CallerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caller_id");
+
                     b.Property<string>("Key")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
@@ -229,7 +300,7 @@ namespace NeonLedger.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status_code");
 
-                    b.HasKey("Key")
+                    b.HasKey("CallerId", "Key")
                         .HasName("pk_idempotency_keys");
 
                     b.ToTable("idempotency_keys", (string)null);
@@ -330,6 +401,18 @@ namespace NeonLedger.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NeonLedger.Access.ApiKey", b =>
+                {
+                    b.HasOne("NeonLedger.Access.Caller", "Caller")
+                        .WithMany()
+                        .HasForeignKey("CallerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_api_keys_callers_caller_id");
+
+                    b.Navigation("Caller");
+                });
+
             modelBuilder.Entity("NeonLedger.Domain.Entry", b =>
                 {
                     b.HasOne("NeonLedger.Domain.Account", null)
@@ -354,6 +437,16 @@ namespace NeonLedger.Data.Migrations
                         .HasForeignKey("NeonLedger.Domain.JournalTransaction", "ReversesTransactionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_transactions_transactions_reverses_transaction_id");
+                });
+
+            modelBuilder.Entity("NeonLedger.Idempotency.IdempotencyRecord", b =>
+                {
+                    b.HasOne("NeonLedger.Access.Caller", null)
+                        .WithMany()
+                        .HasForeignKey("CallerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_idempotency_keys_callers_caller_id");
                 });
 
             modelBuilder.Entity("NeonLedger.Payments.Payment", b =>

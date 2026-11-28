@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NeonLedger.Access;
 using NeonLedger.Data;
 using NeonLedger.Domain;
 using NeonLedger.Idempotency;
@@ -32,6 +33,7 @@ public static class TransactionEndpoints
         [FromHeader(Name = Idempotent.KeyHeader)] string? idempotencyKey,
         LedgerService ledger,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         CancellationToken cancellationToken)
     {
         if (Idempotent.ValidateKey(idempotencyKey) is { } keyProblem)
@@ -68,6 +70,7 @@ public static class TransactionEndpoints
         }
 
         var result = await idempotency.RunAsync(
+            caller.Id,
             idempotencyKey!,
             "post_transaction",
             command,
@@ -81,6 +84,7 @@ public static class TransactionEndpoints
         [FromHeader(Name = Idempotent.KeyHeader)] string? idempotencyKey,
         LedgerService ledger,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         CancellationToken cancellationToken)
     {
         if (Idempotent.ValidateKey(idempotencyKey) is { } keyProblem)
@@ -89,6 +93,7 @@ public static class TransactionEndpoints
         }
 
         var result = await idempotency.RunAsync(
+            caller.Id,
             idempotencyKey!,
             "reverse_transaction",
             id,

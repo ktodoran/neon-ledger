@@ -134,6 +134,7 @@ public sealed class IdempotencyTests(LedgerApp app) : IClassFixture<LedgerApp>
         {
             var executor = scope.ServiceProvider.GetRequiredService<IdempotentExecutor>();
             await Assert.ThrowsAsync<InvalidOperationException>(() => executor.RunAsync(
+                app.CallerId,
                 key,
                 "test_operation",
                 "request",
@@ -146,6 +147,7 @@ public sealed class IdempotencyTests(LedgerApp app) : IClassFixture<LedgerApp>
         {
             var executor = scope.ServiceProvider.GetRequiredService<IdempotentExecutor>();
             var retry = await executor.RunAsync(
+                app.CallerId,
                 key,
                 "test_operation",
                 "request",

@@ -22,7 +22,7 @@ public enum IdempotencyOutcome
 public sealed record IdempotencyResult(IdempotencyOutcome Outcome, IdempotentResponse? Response);
 
 /// <summary>
-/// Runs a write at most once per idempotency key.
+/// Runs a write at most once per caller and idempotency key.
 ///
 /// The key row, the write and the stored response are committed in one database
 /// transaction. A second request with the same key blocks on the key's unique index
@@ -35,6 +35,7 @@ public sealed class IdempotentExecutor(LedgerDbContext db, TimeProvider clock, I
     private readonly JsonSerializerOptions _json = json.Value.SerializerOptions;
 
     public async Task<IdempotencyResult> RunAsync<TRequest>(
+        Guid callerId,
         string key,
         string operation,
         TRequest request,
@@ -48,15 +49,15 @@ public sealed class IdempotentExecutor(LedgerDbContext db, TimeProvider clock, I
 
         var claimed = await db.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO idempotency_keys (key, operation, request_hash, created_at)
-            VALUES ({key}, {operation}, {hash}, {now})
-            ON CONFLICT (key) DO NOTHING
+            INSERT INTO idempotency_keys (caller_id, key, operation, request_hash, created_at)
+            VALUES ({callerId}, {key}, {operation}, {hash}, {now})
+            ON CONFLICT (caller_id, key) DO NOTHING
             """,
             cancellationToken);
 
         if (claimed == 0)
         {
-            var stored = await db.IdempotencyKeys.AsNoTracking().SingleAsync(r => r.Key == key, cancellationToken);
+            var stored = await db.IdempotencyKeys.AsNoTracking().SingleAsync(r => r.CallerId == callerId && r.Key == key, cancellationToken);
             await transaction.RollbackAsync(cancellationToken);
 
             if (stored.RequestHash != hash || stored.Operation != operation)
@@ -73,7 +74,7 @@ public sealed class IdempotentExecutor(LedgerDbContext db, TimeProvider clock, I
         var serialized = JsonSerializer.Serialize(body, body.GetType(), _json);
 
         await db.Database.ExecuteSqlAsync(
-            $"UPDATE idempotency_keys SET status_code = {statusCode}, response_body = {serialized} WHERE key = {key}",
+            $"UPDATE idempotency_keys SET status_code = {statusCode}, response_body = {serialized} WHERE caller_id = {callerId} AND key = {key}",
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 

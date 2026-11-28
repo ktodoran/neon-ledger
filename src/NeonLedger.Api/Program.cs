@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using NeonLedger;
+using NeonLedger.Access;
 using NeonLedger.Api;
 using NeonLedger.Data;
 using NeonLedger.Events;
@@ -22,14 +24,22 @@ builder.Services.AddScoped<EventLog>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<IdempotentExecutor>();
 builder.Services.AddScoped<IntegrityCheck>();
+builder.Services.AddScoped<KeyIssuer>();
+builder.Services.AddScoped<CurrentCaller>();
+builder.Services.AddHttpContextAccessor();
 
-// Which web pages may call this service from a browser. None, unless configured:
-// the service has no authentication, so a page that can reach it can post to it.
+// Every endpoint needs an API key unless it is marked as open, and a write needs a key that may write.
+builder.Services.AddAuthentication(ApiKeyAuthentication.SchemeName)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthentication>(ApiKeyAuthentication.SchemeName, null);
+builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(ApiKeyAuthentication.Policy);
+
+// Which web pages may call this service from a browser. None, unless configured. A page
+// still needs an API key; this decides whether the browser lets it try.
 var browserOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins(browserOrigins)
     .WithMethods(HttpMethods.Get, HttpMethods.Post)
-    .WithHeaders("Content-Type", Idempotent.KeyHeader)
+    .WithHeaders("Content-Type", "Authorization", Idempotent.KeyHeader)
     .WithExposedHeaders(Idempotent.ReplayedHeader, "Location")));
 
 // A request that cannot be read is the caller's mistake in every environment. The default
@@ -41,37 +51,37 @@ builder.Services.AddOpenApi();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false)));
 
-var migrateOnly = args is ["migrate"];
-if (migrateOnly)
+var command = AdminCommands.Handles(args);
+if (command)
 {
-    // On an empty database EF probes for its history table and logs the failed query
-    // as an error before creating the table. A migration that really fails throws.
+    // A command prints its own result. On an empty database EF also logs its failed probe
+    // for the history table as an error before creating it; a migration that really fails throws.
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
     builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
 }
 
 var app = builder.Build();
 
-// `dotnet run -- migrate` applies pending migrations and exits. The server never migrates on its own.
-if (migrateOnly)
+// `dotnet run -- migrate` and `dotnet run -- keys ...` do one thing and exit.
+// The server never migrates on its own.
+if (command)
 {
-    await using var scope = app.Services.CreateAsyncScope();
-    var database = scope.ServiceProvider.GetRequiredService<LedgerDbContext>().Database;
-    var before = (await database.GetAppliedMigrationsAsync()).Count();
-    await database.MigrateAsync();
-    var applied = (await database.GetAppliedMigrationsAsync()).Count() - before;
-    Console.WriteLine(applied == 0 ? "Database is up to date." : $"Applied {applied} migration(s).");
+    Environment.ExitCode = await AdminCommands.RunAsync(args, app.Services, Console.Out);
     return;
 }
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapOpenApi();
+app.MapOpenApi().AllowAnonymous();
 app.MapGet("/health", async (LedgerDbContext db, CancellationToken cancellationToken) =>
         await db.Database.CanConnectAsync(cancellationToken)
             ? Results.Ok(new { status = "ok" })
             : Results.Json(new { status = "database_unreachable" }, statusCode: StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous()
     .ExcludeFromDescription();
 app.MapGet("/v1/integrity", async (IntegrityCheck check, CancellationToken cancellationToken) =>
         Results.Ok(await check.RunAsync(cancellationToken)))

@@ -4,6 +4,9 @@ public sealed class IdempotencyRecord
 {
     public const int MaxKeyLength = 255;
 
+    /// <summary>Whose key this is. Two callers may use the same key text without meeting.</summary>
+    public Guid CallerId { get; set; }
+
     public string Key { get; set; } = string.Empty;
 
     public string Operation { get; set; } = string.Empty;

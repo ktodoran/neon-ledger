@@ -14,9 +14,9 @@ I spent four years building payment and digital banking systems in C#. None of t
 
 ## Status
 
-Built: the ledger core, payments with two lifecycles (instant, and ACH-style pending → settled → returned), an event feed, and a browser console that runs against a simulation or against the service itself. Each is complete for what it claims below.
+Built: the ledger core, payments with two lifecycles (instant, and ACH-style pending → settled → returned), an event feed, callers that authenticate with API keys, and a browser console that runs against a simulation or against the service itself. Each is complete for what it claims below.
 
-It is not a payments product. There is no authentication, and nothing here talks to a bank or a payment network: settlement and returns happen when a caller says so (see [Known limits](#known-limits) and [Roadmap](#roadmap)). It has not run in production.
+It is not a payments product. Any caller with a key can reach every account, and nothing here talks to a bank or a payment network: settlement and returns happen when a caller says so (see [Known limits](#known-limits) and [Roadmap](#roadmap)). It has not run in production.
 
 ## The console
 
@@ -48,7 +48,8 @@ The important rules are enforced twice: in the application, where a violation be
 | Held funds cannot be spent twice | Postings and new holds are checked against the available balance, under the same row lock | The same `CHECK`, plus `held >= 0` | `PaymentTests`, `PaymentConcurrencyTests`, `DatabaseRuleTests` |
 | No double spend under concurrency | `SELECT … FOR NO KEY UPDATE` on every account involved | Row locks | `ConcurrencyTests`, `PaymentConcurrencyTests` |
 | No deadlock between opposing transfers | Payment row first, then accounts in id order | | `ConcurrencyTests` |
-| A retry acts once | Idempotency key committed with the write | Primary key on the key | `IdempotencyTests`, `PaymentTests` |
+| A retry acts once | Idempotency key committed with the write | Primary key on the caller and the key | `IdempotencyTests`, `PaymentTests`, `AuthenticationTests` |
+| Nothing is read or written without a key, and nothing is written with a read-only one | One fallback policy over every endpoint | The key's hash is stored, never the key | `AuthenticationTests`, `KeyCommandTests` |
 | History is append-only | No update or delete paths exist | Triggers reject `UPDATE`, `DELETE`, `TRUNCATE` | `DatabaseRuleTests` |
 | A transaction is reversed at most once | Checked under a lock on the original | Unique index | `ReversalTests` |
 | A payment only moves forward, and its facts never change | Status checked under a lock on the payment row | Trigger on every update; `CHECK`s tie each status to its evidence | `PaymentTests`, `PaymentConcurrencyTests`, `DatabaseRuleTests` |
@@ -57,14 +58,23 @@ The important rules are enforced twice: in the application, where a violation be
 
 The concurrency tests were checked the hard way. Removing the lock ordering fails the opposing-transfers test; removing the account row lock fails the double-spend test; removing the payment row lock fails the settle-versus-cancel test; ignoring holds in the funds check fails the held-funds test; and dropping the transaction-id filter from the feed fails the out-of-order commit test.
 
+The authentication tests were checked the same way. Removing the default policy fails eight tests, ignoring revocation fails two, and letting a read-only key write fails one.
+
 ## Run it
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Docker.
 
 ```bash
-docker compose up -d --wait                          # PostgreSQL on localhost:5433
-dotnet run --project src/NeonLedger.Api -- migrate   # create the schema
-dotnet run --project src/NeonLedger.Api              # http://localhost:5080
+docker compose up -d --wait                                   # PostgreSQL on localhost:5433
+dotnet run --project src/NeonLedger.Api -- migrate            # create the schema
+dotnet run --project src/NeonLedger.Api -- keys create me     # print an API key, once
+dotnet run --project src/NeonLedger.Api                       # http://localhost:5080
+```
+
+Every request under `/v1` needs that key. The examples below read it from your shell, so put it there first, pasting the key the third command printed:
+
+```bash
+export KEY=nl_...
 ```
 
 If something on your machine already uses port 5433, pick another for both the database and the API before running the commands above:
@@ -76,7 +86,7 @@ export ConnectionStrings__Ledger="Host=localhost;Port=5434;Database=neon_ledger;
 
 The OpenAPI document is at `http://localhost:5080/openapi/v1.json`.
 
-**Calling it from a web page.** A browser will only let a page call the service if the page's origin is listed under `Cors:AllowedOrigins`. In production configuration the list is empty. In development (`dotnet run`) it holds the console's addresses: `http://localhost:5173`, `http://localhost:4173` and `https://ktodoran.github.io`. To allow another, set `Cors__AllowedOrigins__0` and so on. The service has no authentication, so treat this list as the list of pages that may post to your ledger.
+**Calling it from a web page.** A browser will only let a page call the service if the page's origin is listed under `Cors:AllowedOrigins`. In production configuration the list is empty. In development (`dotnet run`) it holds the console's addresses: `http://localhost:5173`, `http://localhost:4173` and `https://ktodoran.github.io`. To allow another, set `Cors__AllowedOrigins__0` and so on. A page still needs an API key to do anything; this list decides whether a browser lets it try.
 
 ### A deposit, a retry and a refusal
 
@@ -85,10 +95,12 @@ Amounts are whole numbers of minor units: `25000` in USD is $250.00.
 Open a settlement account (where money enters and leaves the ledger) and a customer account:
 
 ```bash
-curl -s -X POST localhost:5080/v1/accounts -H 'Content-Type: application/json' \
+curl -s -X POST localhost:5080/v1/accounts \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"name":"ACH settlement","currency":"USD","normalBalance":"debit","allowNegative":true}'
 
-curl -s -X POST localhost:5080/v1/accounts -H 'Content-Type: application/json' \
+curl -s -X POST localhost:5080/v1/accounts \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"name":"Jordan checking","currency":"USD","normalBalance":"credit"}'
 ```
 
@@ -96,6 +108,7 @@ Post a deposit, using the two ids from the responses:
 
 ```bash
 curl -s -X POST localhost:5080/v1/transactions \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: deposit-0001' \
   -d '{
     "description": "Incoming ACH deposit",
@@ -140,6 +153,7 @@ Create an ACH-style payment from the customer to the settlement account:
 
 ```bash
 curl -s -X POST localhost:5080/v1/payments \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: bill-0001' \
   -d '{"rail":"ach","sourceAccountId":"<customer id>","destinationAccountId":"<settlement id>","amount":12000,"description":"Electric bill"}'
 ```
@@ -153,7 +167,8 @@ It is `pending`. No money has moved, but the customer can no longer spend it:
 Settle it, and the hold becomes a posted transaction:
 
 ```bash
-curl -s -X POST localhost:5080/v1/payments/<payment id>/settle -H 'Idempotency-Key: bill-0001-settle'
+curl -s -X POST localhost:5080/v1/payments/<payment id>/settle \
+  -H "Authorization: Bearer $KEY" -H 'Idempotency-Key: bill-0001-settle'
 ```
 
 ```json
@@ -164,13 +179,14 @@ If it comes back, return it with the reason. The settlement is reversed, not era
 
 ```bash
 curl -s -X POST localhost:5080/v1/payments/<payment id>/return \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: bill-0001-return' -d '{"reason":"R01"}'
 ```
 
 The whole story is in the event feed, in order:
 
 ```bash
-curl -s 'localhost:5080/v1/events'
+curl -s -H "Authorization: Bearer $KEY" 'localhost:5080/v1/events'
 ```
 
 ```
@@ -202,7 +218,32 @@ An account has three numbers. `balance` is what has posted. `held` is the part o
 
 A return is refused if the money is no longer in the destination account. The payment then stays `settled`, because that is the truth.
 
+## Callers and keys
+
+A **caller** is something that uses the ledger: a service, a job, the console. A caller holds one or more **API keys**, and a key either may write or may only read.
+
+```bash
+dotnet run --project src/NeonLedger.Api -- keys create billing-service              # read and write
+dotnet run --project src/NeonLedger.Api -- keys create auditor --read-only
+dotnet run --project src/NeonLedger.Api -- keys list
+dotnet run --project src/NeonLedger.Api -- keys revoke <key id>
+```
+
+`keys create` prints the key once. The ledger stores its id and a SHA-256 hash of its secret, so a copy of the database is not a set of working keys. `--quiet` prints the key and nothing else, for a script to capture. Creating a second key for a caller that already exists adds one to it, which is how a key is replaced: issue the new one, move the caller over, revoke the old one. A revoked key stops working with the next request.
+
+Send the key with every request:
+
+```
+Authorization: Bearer nl_3f9a1c2b7d4e_…
+```
+
+No key, or one the ledger does not accept, is a `401` with the code `unauthenticated`. A read-only key that tries to write is a `403` with the code `forbidden`. The `401` does not say whether a key was mistyped, unknown or revoked.
+
+Keys are managed from the command line and not over HTTP. Whoever can run the program against the database already has more access than any key grants, so there is no first-key problem to solve and no administrative endpoint to protect.
+
 ## API
+
+Everything under `/v1` needs an API key, and a `POST` needs one that may write. `GET /health` and the OpenAPI document are open.
 
 | Method and path | What it does |
 |---|---|
@@ -237,11 +278,11 @@ A transaction can have more than two entries, so one payment can carry its fee:
 
 **Normal balance.** An account's balance grows on its normal side. Customer funds are a liability of the institution holding them, so customer accounts are credit-normal; cash and settlement accounts are debit-normal. That is why a deposit debits the settlement account and credits the customer, and both balances go up.
 
-**Idempotency.** The key is stored with a hash of the request. The same key with the same request replays the stored response, success or refusal. The same key with a different request is refused (`idempotency_key_reused`). A request that fails validation never reaches the ledger and does not use up its key.
+**Idempotency.** A key belongs to the caller that sent it: two callers can use the same key text without meeting, and a caller's retry is still a replay after it changes its API key. The key is stored with a hash of the request. The same key with the same request replays the stored response, success or refusal. The same key with a different request is refused (`idempotency_key_reused`). A request that fails validation never reaches the ledger and does not use up its key.
 
 **Events.** `transaction.posted`, `payment.created`, `payment.settled`, `payment.canceled`, `payment.returned`. Each carries the transaction or payment in the same shape the API returns it.
 
-**Errors.** Every error is an RFC 9457 problem document. Refusals carry a `code`: `insufficient_funds`, `account_not_found`, `currency_mismatch`, `already_reversed`, `reversal_not_reversible`, `transaction_not_found`, `payment_not_found`, `invalid_payment_state`, `idempotency_key_required`, `idempotency_key_too_long`, `idempotency_key_reused`, `validation_failed`.
+**Errors.** Every error is an RFC 9457 problem document. Refusals carry a `code`: `unauthenticated`, `forbidden`, `insufficient_funds`, `account_not_found`, `currency_mismatch`, `already_reversed`, `reversal_not_reversible`, `transaction_not_found`, `payment_not_found`, `invalid_payment_state`, `idempotency_key_required`, `idempotency_key_too_long`, `idempotency_key_reused`, `validation_failed`.
 
 ## Design decisions
 
@@ -250,6 +291,12 @@ A transaction can have more than two entries, so one payment can carry its fee:
 **Pessimistic locks, taken in a fixed order.** A write locks every account it touches with `SELECT … FOR NO KEY UPDATE`, sorted by id, then checks funds and writes. Payments against one account are serialized by the database, and two transfers in opposite directions queue instead of deadlocking. Optimistic concurrency with retries would also work; I chose locks because a ledger's hot rows are contended by design, and under contention retries turn into wasted work and unpredictable latency. The lock mode matters: plain `FOR UPDATE` also blocks foreign-key checks, so a new pending payment that merely names a busy account as its destination would wait behind every settlement on it. A test holds that lock and checks the payment is still accepted.
 
 **The idempotency key commits with the write.** The key row is inserted first, in the same database transaction as the write. A concurrent request with the same key blocks on the key's primary key until the first one commits, then reads its stored response. If the first one crashes, its transaction rolls back and takes the key with it, so the retry runs for real. There is no window where the money has moved and the key is not recorded, or the reverse.
+
+**An idempotency key belongs to a caller, not to an API key.** Scoping it to the API key would be simpler and wrong: a caller that rotates its key in the middle of a retry would pay twice. Scoping it to the caller also means two services cannot collide by both counting from `payment-0001`.
+
+**Authorization is the default, not an attribute.** One fallback policy covers every endpoint: a caller must be authenticated, and anything but a `GET` needs a key that may write. An endpoint added later is protected without anyone remembering to protect it; the two open ones say so explicitly.
+
+**A fast hash for keys, on purpose.** Passwords need a slow hash because people choose guessable ones. An API key here is 256 random bits, so there is nothing to guess, and SHA-256 keeps authentication to one indexed read and one hash per request. Every request does that read, with no cache, which is what makes revoking a key take effect at once.
 
 **A hold is a number on the account, not a transfer to a clearing account.** The other common design moves pending funds into a shared clearing account and out again at settlement. That keeps everything as ledger entries, but it posts money that has not moved, and it puts every pending payment in the system through one row. Here a pending payment raises `held` on its own source account. The posted balance stays what a statement would show, the funds check is `balance - held`, and payments from different customers never wait on each other until they settle.
 
@@ -261,7 +308,7 @@ A transaction can have more than two entries, so one payment can carry its fee:
 
 **EF Core, with SQL where it matters.** EF Core does the mapping, the migrations and the ordinary queries. The statements where the exact SQL is the point (the row locks, the idempotency insert, the event feed, the integrity check) are written out.
 
-**One project, folders by concern.** `Domain`, `Ledger`, `Payments`, `Events`, `Idempotency`, `Data`, `Api`. It is a small service, and splitting it into several assemblies would add ceremony without adding a boundary anything depends on.
+**One project, folders by concern.** `Domain`, `Ledger`, `Payments`, `Events`, `Idempotency`, `Access`, `Data`, `Api`. It is a small service, and splitting it into several assemblies would add ceremony without adding a boundary anything depends on.
 
 ## Tests
 
@@ -274,7 +321,7 @@ Most tests drive the real application over HTTP, in process, against a real Post
 CI runs formatting, a build with warnings as errors, and the tests on every push. The console has its own job: lint, formatting, its tests and a build. A third job starts the ledger and runs the console's parity script against it:
 
 ```bash
-cd console && npm run parity    # needs the ledger running on localhost:5080
+cd console && NEON_LEDGER_KEY=$KEY npm run parity    # needs the ledger running on localhost:5080
 ```
 
 ### Changing the schema
@@ -288,20 +335,22 @@ The server never migrates on start. Apply migrations with `dotnet run --project 
 
 ## Known limits
 
-- **No authentication or authorization.** Anyone who can reach the service can post. It needs to sit behind something that authenticates callers until that is built.
+- **Authentication without tenancy.** Any caller with a key can read every account, and any caller with a write key can post to any of them. There are two permission levels and nothing finer. Accounts are not owned by callers.
+- **Who did it is recorded once.** The caller behind a write is stored with its idempotency key, not on the transaction, the payment or the event.
+- **Keys do not expire, and failed attempts are not counted.** There is no rate limit or lockout in the service; that belongs in front of it. Every request reads its key from the database.
 - **Nothing settles by itself.** There are no effective dates, cutoffs, batches or files, and no connection to a bank or network. A caller decides when a payment settles or comes back. Return windows and return codes are not checked; the reason is stored as given.
 - **A busy account is a queue.** Every write that touches an account waits for the one before it. That is correct for a customer account and a real ceiling for an account every settlement touches, such as a single settlement account. The usual answers are to shard such accounts or to batch their entries; neither is built.
 - **A payment has one source, one destination and no fee.** A payment with a fee can be posted as a multi-entry transaction, but not yet as a payment with a lifecycle. There are no partial returns.
 - **One currency per transaction.** There is no foreign exchange. Currency codes are checked for shape, not against the ISO 4217 list.
 - **The event feed is pull-only**, and a long write transaction on the same PostgreSQL server delays it.
-- **Idempotency keys are kept forever** and are global, not scoped to a caller. There is no expiry job.
+- **Idempotency keys are kept forever.** There is no expiry job.
 - **The integrity check reads every entry.** It is an operational tool for a schedule, not something to call per request.
 
 ## Roadmap
 
-1. **Caller authentication**, with idempotency keys scoped to the caller.
-2. **Settlement that runs itself**: effective dates and a worker that settles what is due, in batches that touch the settlement account once.
-3. **Webhooks** delivered from the event feed, with retries.
+1. **Settlement that runs itself**: effective dates and a worker that settles what is due, in batches that touch the settlement account once.
+2. **Webhooks** delivered from the event feed, with retries.
+3. **Accounts owned by callers**, so a key reaches only its own.
 
 ## License
 

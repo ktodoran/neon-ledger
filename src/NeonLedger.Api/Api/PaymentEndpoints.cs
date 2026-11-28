@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NeonLedger.Access;
 using NeonLedger.Data;
 using NeonLedger.Idempotency;
 using NeonLedger.Ledger;
@@ -30,6 +31,7 @@ public static class PaymentEndpoints
         [FromHeader(Name = Idempotent.KeyHeader)] string? idempotencyKey,
         PaymentService payments,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         CancellationToken cancellationToken)
     {
         if (Idempotent.ValidateKey(idempotencyKey) is { } keyProblem)
@@ -79,6 +81,7 @@ public static class PaymentEndpoints
 
         var command = new CreatePayment(request.Rail!.Value, request.SourceAccountId, request.DestinationAccountId, request.Amount, description);
         var result = await idempotency.RunAsync(
+            caller.Id,
             idempotencyKey!,
             "create_payment",
             command,
@@ -92,16 +95,18 @@ public static class PaymentEndpoints
         [FromHeader(Name = Idempotent.KeyHeader)] string? idempotencyKey,
         PaymentService payments,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         CancellationToken cancellationToken) =>
-        TransitionAsync(idempotencyKey, "settle_payment", id, idempotency, ct => payments.SettleAsync(id, ct), cancellationToken);
+        TransitionAsync(idempotencyKey, "settle_payment", id, idempotency, caller, ct => payments.SettleAsync(id, ct), cancellationToken);
 
     private static Task<IResult> CancelAsync(
         Guid id,
         [FromHeader(Name = Idempotent.KeyHeader)] string? idempotencyKey,
         PaymentService payments,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         CancellationToken cancellationToken) =>
-        TransitionAsync(idempotencyKey, "cancel_payment", id, idempotency, ct => payments.CancelAsync(id, ct), cancellationToken);
+        TransitionAsync(idempotencyKey, "cancel_payment", id, idempotency, caller, ct => payments.CancelAsync(id, ct), cancellationToken);
 
     private static Task<IResult> ReturnAsync(
         Guid id,
@@ -109,6 +114,7 @@ public static class PaymentEndpoints
         [FromHeader(Name = Idempotent.KeyHeader)] string? idempotencyKey,
         PaymentService payments,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         CancellationToken cancellationToken)
     {
         var reason = request.Reason?.Trim() ?? string.Empty;
@@ -125,6 +131,7 @@ public static class PaymentEndpoints
             "return_payment",
             new { id, reason },
             idempotency,
+            caller,
             ct => payments.ReturnAsync(id, reason, ct),
             cancellationToken);
     }
@@ -134,6 +141,7 @@ public static class PaymentEndpoints
         string operation,
         TRequest request,
         IdempotentExecutor idempotency,
+        CurrentCaller caller,
         Func<CancellationToken, Task<Result<Payment>>> action,
         CancellationToken cancellationToken)
     {
@@ -143,6 +151,7 @@ public static class PaymentEndpoints
         }
 
         var result = await idempotency.RunAsync(
+            caller.Id,
             idempotencyKey!,
             operation,
             request,

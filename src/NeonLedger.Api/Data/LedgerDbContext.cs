@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using NeonLedger.Access;
 using NeonLedger.Domain;
 using NeonLedger.Events;
 using NeonLedger.Idempotency;
@@ -20,6 +21,10 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
     public DbSet<EventRecord> Events => Set<EventRecord>();
 
     public DbSet<Payment> Payments => Set<Payment>();
+
+    public DbSet<Caller> Callers => Set<Caller>();
+
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -135,10 +140,31 @@ public sealed class LedgerDbContext(DbContextOptions<LedgerDbContext> options) :
         modelBuilder.Entity<IdempotencyRecord>(record =>
         {
             record.ToTable("idempotency_keys");
-            record.HasKey(r => r.Key);
+            record.HasKey(r => new { r.CallerId, r.Key });
+            record.HasOne<Caller>().WithMany().HasForeignKey(r => r.CallerId).OnDelete(DeleteBehavior.Restrict);
             record.Property(r => r.Key).HasMaxLength(IdempotencyRecord.MaxKeyLength);
             record.Property(r => r.Operation).HasMaxLength(64);
             record.Property(r => r.RequestHash).HasColumnType("char(64)");
+        });
+
+        modelBuilder.Entity<Caller>(caller =>
+        {
+            caller.ToTable("callers");
+            caller.HasKey(c => c.Id);
+            caller.Property(c => c.Id).ValueGeneratedNever();
+            caller.Property(c => c.Name).HasMaxLength(Caller.MaxNameLength);
+            caller.HasIndex(c => c.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<ApiKey>(key =>
+        {
+            key.ToTable("api_keys", table =>
+                table.HasCheckConstraint("ck_api_keys_access", "access IN ('read', 'write')"));
+            key.HasKey(k => k.Id);
+            key.Property(k => k.Id).HasColumnType($"char({ApiKey.IdLength})");
+            key.Property(k => k.SecretHash).HasColumnType("char(64)");
+            key.Property(k => k.Access).HasConversion(Lowercase<AccessLevel>()).HasMaxLength(8);
+            key.HasOne(k => k.Caller).WithMany().HasForeignKey(k => k.CallerId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 

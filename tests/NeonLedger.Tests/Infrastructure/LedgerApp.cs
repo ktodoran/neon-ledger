@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NeonLedger.Access;
 using NeonLedger.Api;
 using NeonLedger.Data;
 using NeonLedger.Domain;
@@ -16,6 +17,7 @@ namespace NeonLedger.Tests.Infrastructure;
 /// <summary>
 /// The real application, in process, on its own freshly migrated database.
 /// Used as a class fixture: tests in one class share a database, classes do not.
+/// <see cref="Client"/> carries an API key that may write, for a caller named "tests".
 /// </summary>
 public sealed class LedgerApp(PostgresServer server) : IAsyncLifetime
 {
@@ -28,6 +30,9 @@ public sealed class LedgerApp(PostgresServer server) : IAsyncLifetime
     private string _connectionString = string.Empty;
 
     public HttpClient Client { get; private set; } = null!;
+
+    /// <summary>The caller <see cref="Client"/> is authenticated as.</summary>
+    public Guid CallerId { get; private set; }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -42,7 +47,28 @@ public sealed class LedgerApp(PostgresServer server) : IAsyncLifetime
 
         await using var scope = _factory.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<LedgerDbContext>().Database.MigrateAsync();
-        Client = _factory.CreateClient();
+        var key = await IssueKeyAsync("tests");
+        CallerId = key.CallerId;
+        Client = CreateClient(key.Token);
+    }
+
+    /// <summary>Issues an API key, as <c>keys create</c> does.</summary>
+    public async Task<IssuedKey> IssueKeyAsync(string caller, AccessLevel access = AccessLevel.Write)
+    {
+        await using var scope = CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<KeyIssuer>().CreateAsync(caller, access, Ct);
+    }
+
+    /// <summary>A client that presents <paramref name="token"/> as its API key, or none when it is null.</summary>
+    public HttpClient CreateClient(string? token)
+    {
+        var client = _factory!.CreateClient();
+        if (token is not null)
+        {
+            client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        }
+
+        return client;
     }
 
     public async ValueTask DisposeAsync()
