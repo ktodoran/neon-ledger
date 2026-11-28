@@ -55,6 +55,30 @@ describe('a ledger over HTTP', () => {
     });
   });
 
+  it('presents its API key with every request, reads included', async () => {
+    const { fetch, calls } = fakeFetch({ body: { status: 'ok' } }, { status: 200, body: {} });
+    const ledger = createHttpLedger('http://localhost:5080', { key: 'nl_abc_def', fetch });
+
+    await ledger.integrity();
+    await ledger.cancelPayment('p1', 'k1');
+
+    expect(calls[0].headers).toEqual({ Authorization: 'Bearer nl_abc_def' });
+    expect(calls[1].headers).toEqual({
+      Authorization: 'Bearer nl_abc_def',
+      'Idempotency-Key': 'k1',
+    });
+  });
+
+  it('passes on a refusal for a key the ledger does not accept', async () => {
+    const { fetch } = fakeFetch({ status: 401, body: { code: 'unauthenticated' } });
+    const ledger = createHttpLedger('http://localhost:5080', { key: 'nl_abc_def', fetch });
+
+    expect(await ledger.listAccounts()).toMatchObject({
+      status: 401,
+      body: { code: 'unauthenticated' },
+    });
+  });
+
   it('says when the ledger marked a response as a replay', async () => {
     const { fetch } = fakeFetch({
       status: 201,

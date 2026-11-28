@@ -1,8 +1,10 @@
 // Runs one script against the simulation and against a real Neon Ledger, and
 // reports every place the two answered differently.
 //
-//   npm run parity                          (the ledger at http://localhost:5080)
-//   npm run parity -- http://localhost:5081
+//   NEON_LEDGER_KEY=nl_... npm run parity                          (http://localhost:5080)
+//   NEON_LEDGER_KEY=nl_... npm run parity -- http://localhost:5081
+//
+// The key has to be one that may write: `keys create parity` makes one.
 //
 // Ids, times and cursors differ by nature, so they are replaced or dropped
 // before comparing. Everything else has to match: status codes, refusal codes,
@@ -71,9 +73,21 @@ function differences(simulated, real, path = '') {
 }
 
 const address = process.argv[2] ?? 'http://localhost:5080';
-const real = createHttpLedger(address);
+const key = process.env.NEON_LEDGER_KEY ?? '';
+if (key === '') {
+  console.error(
+    'Set NEON_LEDGER_KEY to an API key that may write. Create one with:\n' +
+      '  dotnet run --project src/NeonLedger.Api -- keys create parity',
+  );
+  process.exit(2);
+}
+const real = createHttpLedger(address, { key });
 if ((await real.health()).status !== 200) {
   console.error(`No ledger answered at ${address}. Start one, then run this again.`);
+  process.exit(2);
+}
+if ((await real.listAccounts()).status !== 200) {
+  console.error(`The ledger at ${address} did not accept the key in NEON_LEDGER_KEY.`);
   process.exit(2);
 }
 

@@ -15,14 +15,14 @@ import { describeBooks, outcomeOf, succeeded } from './outcome.js';
 const REPOSITORY = 'https://github.com/ktodoran/neon-ledger';
 
 /**
- * `failedConnection` is set when the page was opened with a ledger address it
- * could not reach: { address, failed: status }.
+ * `ledgerAddress` is set when the page was opened with ?ledger=: the connect
+ * panel opens with that address filled in, waiting for a key.
  */
-export function App({ store, failedConnection = null }) {
+export function App({ store, ledgerAddress = null }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [busy, setBusy] = useState(false);
   const [books, setBooks] = useState(null);
-  const [connecting, setConnecting] = useState(failedConnection !== null);
+  const [connecting, setConnecting] = useState(ledgerAddress !== null);
   // A new ledger gets new panels: forms and outcomes from the old one are dropped.
   const [generation, setGeneration] = useState(0);
   const [tourRun, setTourRun] = useState(0);
@@ -74,8 +74,8 @@ export function App({ store, failedConnection = null }) {
     setTourRun((current) => current + 1);
   }
 
-  async function connect(address) {
-    const result = await act(() => store.connect(address));
+  async function connect(address, key) {
+    const result = await act(() => store.connect(address, key));
     if (result.connected) {
       setConnecting(false);
       fresh();
@@ -107,7 +107,7 @@ export function App({ store, failedConnection = null }) {
       {connecting && !connected && (
         <Connect
           busy={busy}
-          initial={failedConnection}
+          initialAddress={ledgerAddress}
           onConnect={connect}
           onClose={() => setConnecting(false)}
         />

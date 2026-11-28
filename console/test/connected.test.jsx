@@ -9,11 +9,22 @@ import { createConsoleStore } from '../src/store.js';
 // A stand-in for a real ledger: the simulation's rules behind the connected
 // ledger's face. What the console does differently when connected is decided
 // by `mode`, so this exercises all of it without a server.
+const KEY = 'nl_000000000000_test';
+
 function standIn({ answers = true } = {}) {
   const ledger = createSimulatedLedger();
   let checks = 0;
+  let accepted = true;
+  const refusal = { status: 401, body: { code: 'unauthenticated', detail: 'Not accepted.' } };
   return {
     ...ledger,
+    // What the real ledger does with a key it does not know, for the calls the console reads with.
+    listAccounts: () => (accepted ? ledger.listAccounts() : Promise.resolve(refusal)),
+    events: (after) => (accepted ? ledger.events(after) : Promise.resolve(refusal)),
+    present(key) {
+      accepted = key === KEY;
+      return this;
+    },
     mode: 'connected',
     address: 'http://localhost:5080',
     health: async () => (answers ? { status: 200, body: { status: 'ok' } } : { status: 0 }),
@@ -32,18 +43,19 @@ afterEach(() => {
 });
 
 async function open(remote = standIn()) {
-  const store = createConsoleStore({ connectTo: () => remote });
+  const store = createConsoleStore({ connectTo: (address, { key }) => remote.present(key) });
   stores.push(store);
   await store.reset();
   render(<App store={store} />);
   return { store, remote, user: userEvent.setup() };
 }
 
-async function connect(user, address = 'http://localhost:5080') {
+async function connect(user, { address = 'http://localhost:5080', key = KEY } = {}) {
   await user.click(screen.getByRole('button', { name: 'Connect a real ledger' }));
   const field = screen.getByLabelText('Ledger address');
   await user.clear(field);
   await user.type(field, address);
+  if (key !== '') await user.type(screen.getByLabelText('API key'), key);
   await user.click(screen.getByRole('button', { name: 'Connect' }));
 }
 
@@ -66,7 +78,7 @@ describe('connecting to a real ledger', () => {
 
   it('will not connect to an address that is not on this machine', async () => {
     const { user, store } = await open();
-    await connect(user, 'https://ledger.example.com');
+    await connect(user, { address: 'https://ledger.example.com' });
 
     expect(screen.getByRole('alert').textContent).toContain('on this machine');
     expect(store.getSnapshot().mode).toBe('simulated');
@@ -94,6 +106,59 @@ describe('connecting to a real ledger', () => {
     } finally {
       window.happyDOM.setURL('http://localhost:3000/');
     }
+  });
+
+  it('asks for a key before it sends anything', async () => {
+    const { user, store } = await open();
+    await connect(user, { key: '' });
+
+    expect(screen.getByRole('alert').textContent).toContain('Paste an API key');
+    expect(store.getSnapshot().mode).toBe('simulated');
+  });
+
+  it('stays on the simulation when the ledger does not accept the key', async () => {
+    const { user, store } = await open();
+    await connect(user, { key: 'nl_000000000000_wrong' });
+
+    expect(screen.getByRole('alert').textContent).toContain('did not accept that key');
+    expect(store.getSnapshot().mode).toBe('simulated');
+  });
+
+  it('keeps the key out of the page, the address bar and browser storage', async () => {
+    const { user, store } = await open();
+    await connect(user);
+
+    expect(store.getSnapshot().mode).toBe('connected');
+    expect(JSON.stringify(store.getSnapshot())).not.toContain(KEY);
+    expect(document.body.innerHTML).not.toContain(KEY);
+    expect(window.location.href).not.toContain(KEY);
+    expect(window.localStorage.length + window.sessionStorage.length).toBe(0);
+  });
+
+  it('says so when the ledger stops accepting the key', async () => {
+    const { user, store, remote } = await open();
+    await connect(user);
+
+    remote.present('revoked');
+    await user.click(screen.getByRole('button', { name: 'Open account' }));
+    await user.type(screen.getByLabelText('Account name'), 'Sam checking');
+    await user.click(
+      within(panel('Accounts')).getAllByRole('button', { name: 'Open account' }).at(-1),
+    );
+
+    expect(store.getSnapshot().trouble).toBe(401);
+    expect(screen.getByText('Key no longer accepted by localhost:5080')).toBeTruthy();
+  });
+
+  it('opens with the address from the link filled in, and still waits for a key', async () => {
+    const store = createConsoleStore({ connectTo: () => standIn() });
+    stores.push(store);
+    await store.reset();
+    render(<App store={store} ledgerAddress="http://localhost:5081" />);
+
+    expect(screen.getByLabelText('Ledger address').value).toBe('http://localhost:5081');
+    expect(screen.getByLabelText('API key').value).toBe('');
+    expect(store.getSnapshot().mode).toBe('simulated');
   });
 
   it('opens the tour its own accounts and leaves the others alone', async () => {

@@ -13,15 +13,18 @@ npm run dev      # http://localhost:5173
 
 **A simulation, by default.** `src/ledger/sim.js` is the ledger's rules written again in JavaScript, answering the same requests as the API with the same response shapes, status codes and refusal codes. It lives in the browser tab: nothing is sent anywhere, and a reload starts over.
 
-**A real ledger, when connected.** "Connect a real ledger" in the top bar switches the console to a Neon Ledger running on your machine. Start one from the repository root, then connect to `http://localhost:5080`:
+**A real ledger, when connected.** "Connect a real ledger" in the top bar switches the console to a Neon Ledger running on your machine. Start one from the repository root and create a key for the console, then connect to `http://localhost:5080` with that key:
 
 ```bash
 docker compose up -d --wait
 dotnet run --project src/NeonLedger.Api -- migrate
+dotnet run --project src/NeonLedger.Api -- keys create console    # prints the key, once
 dotnet run --project src/NeonLedger.Api
 ```
 
-`http://localhost:5173/?ledger=http://localhost:5080` opens the console already connected.
+`http://localhost:5173/?ledger=http://localhost:5080` opens the connect panel with the address filled in. The key is always typed: it does not belong in a link.
+
+The console keeps the key in memory for as long as the page is open. It is not written to the address bar, to browser storage or anywhere on the page, and a reload forgets it.
 
 When connected:
 
@@ -30,7 +33,7 @@ When connected:
 - The "race" trial sends two withdrawals at the same moment, and the ledger's row lock decides which one loses.
 - The integrity check runs when you press "Check the books", not after every request. On a real ledger it reads every entry.
 
-Only an address on the same machine is accepted (`localhost`, `127.0.0.1` or `[::1]`). The ledger has no authentication, and the console is not meant to be a way to post to someone else's server.
+Only an address on the same machine is accepted (`localhost`, `127.0.0.1` or `[::1]`), so the key is never sent anywhere else. A read-only key connects and shows everything; every button that writes is answered with the ledger's `403`.
 
 ### From the public page
 
@@ -48,14 +51,17 @@ The ledger also has to accept the page's origin. Its development configuration l
 The simulation shows what the ledger does. It is not evidence that the real one does it: that is the ledger's own test suite, in `tests/`. What ties the two together is `npm run parity`:
 
 ```bash
-npm run parity                          # against http://localhost:5080
-npm run parity -- http://localhost:5081
+NEON_LEDGER_KEY=nl_... npm run parity                          # against http://localhost:5080
+NEON_LEDGER_KEY=nl_... npm run parity -- http://localhost:5081
 ```
+
+The key has to be one that may write.
 
 It runs one script (`src/ledger/script.js`: 35 requests covering deposits, replays, key reuse, validation, overdrafts, holds, and every payment transition, allowed and refused) against the simulation and against the real API, replaces the things that differ by nature (ids, times, cursors), and reports every other difference. CI runs it on every push.
 
-Two things the simulation still cannot show, and the console says so where it matters:
+Three things the simulation still cannot show, and the console says so where it matters:
 
+- **Callers.** It has no keys and one caller. Authentication is the real ledger's, and is tested there.
 - **Concurrency.** It handles requests one at a time. Its "race" reaches the outcome the real ledger reaches, but not by the same mechanism.
 - **The database.** The real ledger also enforces its rules in PostgreSQL, with constraints and triggers. The simulation has no second line of defense.
 

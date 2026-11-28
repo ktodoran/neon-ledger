@@ -36,7 +36,11 @@ export function TopBar({ snapshot, busy, onCheck, onReset, onConnect, onDisconne
         <div className="mode">
           <span className={snapshot.answering ? 'chip chip-good' : 'chip chip-warn'}>
             <span className="dot" aria-hidden="true" />
-            {snapshot.answering ? `Connected to ${host}` : `No answer from ${host}`}
+            {snapshot.answering
+              ? `Connected to ${host}`
+              : snapshot.trouble === 401
+                ? `Key no longer accepted by ${host}`
+                : `No answer from ${host}`}
           </span>
           <button type="button" className="btn btn-quiet" onClick={onDisconnect} disabled={busy}>
             Disconnect

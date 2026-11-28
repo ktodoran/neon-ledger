@@ -1,4 +1,4 @@
-// A real Neon Ledger, over HTTP.
+// A real Neon Ledger, over HTTP, as the caller its API key belongs to.
 //
 // The same interface as the simulation, and the same result shape:
 // { status, body } with `replayed: true` when the ledger says the response is a
@@ -23,9 +23,13 @@ export function localAddress(text) {
   return local && url.protocol === 'http:' ? url.origin : null;
 }
 
-export function createHttpLedger(baseUrl, { fetch = globalThis.fetch.bind(globalThis) } = {}) {
+export function createHttpLedger(
+  baseUrl,
+  { key: apiKey = null, fetch = globalThis.fetch.bind(globalThis) } = {},
+) {
   async function send(method, path, { body, key } = {}) {
     const headers = {};
+    if (apiKey !== null) headers.Authorization = `Bearer ${apiKey}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (key !== undefined) headers['Idempotency-Key'] = key;
     try {

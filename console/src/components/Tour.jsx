@@ -56,7 +56,7 @@ export function Tour({ store, mode, busy, act, onStart }) {
                 label: 'Not started',
                 tone: 'warn',
                 message:
-                  'The ledger did not open the tour’s accounts. Check that it is still running, then try again.',
+                  'The ledger did not open the tour’s accounts. It may have stopped, or this key may only be allowed to read.',
               }}
             />
           )}

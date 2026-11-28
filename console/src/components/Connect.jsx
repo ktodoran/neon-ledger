@@ -5,10 +5,14 @@ const DEFAULT_ADDRESS = 'http://localhost:5080';
 
 const START = `docker compose up -d --wait
 dotnet run --project src/NeonLedger.Api -- migrate
+dotnet run --project src/NeonLedger.Api -- keys create console
 dotnet run --project src/NeonLedger.Api`;
 
 /** Why a connection did not happen, in terms of what to do about it. */
 function explain(address, status) {
+  if (status === 401) {
+    return `The ledger at ${address} did not accept that key. Paste the whole key, starting with nl_, as “keys create” printed it. A revoked key does not work either.`;
+  }
   if (status !== 0) {
     return `The ledger at ${address} answered ${String(status)}. It is running but cannot reach its database.`;
   }
@@ -21,12 +25,13 @@ function explain(address, status) {
 }
 
 /** The form for switching from the simulation to a ledger running on this machine. */
-export function Connect({ busy, initial, onConnect, onClose }) {
+export function Connect({ busy, initialAddress, onConnect, onClose }) {
   const id = useId();
-  const [address, setAddress] = useState(initial?.address ?? DEFAULT_ADDRESS);
-  const [error, setError] = useState(
-    initial?.failed === undefined ? null : explain(initial.address, initial.failed),
-  );
+  const [address, setAddress] = useState(initialAddress ?? DEFAULT_ADDRESS);
+  // Held here while it is typed, and handed to the ledger client on connect.
+  // It is never written to the address bar or to browser storage.
+  const [key, setKey] = useState('');
+  const [error, setError] = useState(null);
 
   async function submit(event) {
     event.preventDefault();
@@ -35,7 +40,11 @@ export function Connect({ busy, initial, onConnect, onClose }) {
       setError('Enter an http address on this machine, such as http://localhost:5080.');
       return;
     }
-    const result = await onConnect(local);
+    if (key.trim() === '') {
+      setError('Paste an API key. The ledger refuses every request without one.');
+      return;
+    }
+    const result = await onConnect(local, key.trim());
     if (!result.connected) setError(explain(local, result.status));
   }
 
@@ -45,14 +54,14 @@ export function Connect({ busy, initial, onConnect, onClose }) {
         <h2 id={`${id}-title`}>Connect a real ledger</h2>
         <p>
           The console can send its requests to a Neon Ledger running on this machine in place of the
-          simulation. Start one from the repository:
+          simulation. Start one from the repository, and create a key for the console:
         </p>
         <pre>
           <code>{START}</code>
         </pre>
         <p className="hint">
-          Only an address on this machine is accepted. The ledger has no authentication, so this
-          page does not send requests anywhere else.
+          The third command prints an API key, once. The console only connects to an address on this
+          machine, so the key is not sent anywhere else, and it is forgotten when this page closes.
         </p>
         {window.location.protocol === 'https:' && (
           <p className="hint">
@@ -71,7 +80,20 @@ export function Connect({ busy, initial, onConnect, onClose }) {
             onChange={(event) => setAddress(event.target.value)}
             autoComplete="off"
             spellCheck="false"
-            aria-invalid={error !== null}
+            aria-describedby={error ? `${id}-error` : undefined}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-key`}>API key</label>
+          <input
+            id={`${id}-key`}
+            className="mono"
+            type="password"
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+            placeholder="nl_…"
+            autoComplete="off"
+            spellCheck="false"
             aria-describedby={error ? `${id}-error` : undefined}
           />
         </div>

@@ -11,21 +11,15 @@ import { createConsoleStore } from './store.js';
 
 const store = createConsoleStore();
 
-// ?ledger=http://localhost:5080 opens the console already connected. If nothing
-// answers there, it opens on the simulation with the reason on screen.
-async function open() {
-  await store.reset();
-  const asked = new URLSearchParams(window.location.search).get('ledger');
-  const address = asked === null ? null : localAddress(asked);
-  if (address === null) return null;
-  const result = await store.connect(address);
-  return result.connected ? null : { address, failed: result.status };
-}
+// ?ledger=http://localhost:5080 opens the connect panel with that address filled
+// in. The key is typed there: it does not belong in a link.
+const asked = new URLSearchParams(window.location.search).get('ledger');
+const ledgerAddress = asked === null ? null : localAddress(asked);
 
-const failedConnection = await open();
+void store.reset();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App store={store} failedConnection={failedConnection} />
+    <App store={store} ledgerAddress={ledgerAddress} />
   </StrictMode>,
 );

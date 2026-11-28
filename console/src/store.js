@@ -20,8 +20,10 @@ const EMPTY = {
   ready: false,
   mode: 'simulated',
   address: null,
-  // False when the last read of a connected ledger got no answer.
+  // False when the last read of a connected ledger failed, and why: 0 for no
+  // answer, 401 for a key the ledger no longer accepts.
   answering: true,
+  trouble: null,
   accounts: [],
   events: [],
   cursor: null,
@@ -62,6 +64,7 @@ export function createConsoleStore({
         mode: from.mode,
         address: from.address ?? null,
         answering: false,
+        trouble: accounts.status !== 200 ? accounts.status : page.status,
       });
       return;
     }
@@ -71,6 +74,7 @@ export function createConsoleStore({
       mode: from.mode,
       address: from.address ?? null,
       answering: true,
+      trouble: null,
       accounts: accounts.body,
       events: [...base.events, ...page.body.items],
       cursor: page.body.nextCursor,
@@ -120,11 +124,18 @@ export function createConsoleStore({
       return cast;
     },
 
-    /** Switches to the ledger at `address` if it answers. Otherwise changes nothing. */
-    async connect(address) {
-      const next = connectTo(address);
+    /**
+     * Switches to the ledger at `address` if it answers and accepts the key.
+     * Otherwise changes nothing. The key is kept by the ledger client and
+     * nowhere else: not in the snapshot, the address bar or browser storage.
+     */
+    async connect(address, key) {
+      const next = connectTo(address, { key });
       const health = await next.health();
       if (health.status !== 200) return { connected: false, status: health.status };
+      // The health check is open to anyone. Reading is what shows the key is accepted.
+      const accounts = await next.listAccounts();
+      if (accounts.status !== 200) return { connected: false, status: accounts.status };
       await switchTo(next);
       return { connected: true };
     },

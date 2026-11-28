@@ -59,6 +59,11 @@ jobs:
           cache-dependency-path: console/package-lock.json
       - run: docker compose up -d --wait
       - run: dotnet run --project src/NeonLedger.Api -- migrate
+      - name: Issue a key for the script
+        run: |
+          key=$(dotnet run --project src/NeonLedger.Api -- keys create parity --quiet | tail -n 1)
+          echo "::add-mask::$key"
+          echo "NEON_LEDGER_KEY=$key" >> "$GITHUB_ENV"
       - name: Start the ledger
         run: |
           dotnet run --project src/NeonLedger.Api > ledger.log 2>&1 &
