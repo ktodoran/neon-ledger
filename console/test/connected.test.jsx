@@ -79,8 +79,21 @@ describe('connecting to a real ledger', () => {
     expect(screen.getByRole('alert').textContent).toContain(
       'Nothing answered at http://localhost:5080',
     );
+    expect(screen.getByRole('alert').textContent).not.toContain('permission');
     expect(store.getSnapshot().mode).toBe('simulated');
     expect(screen.getByText('Simulated in this browser')).toBeTruthy();
+  });
+
+  it('mentions the browser’s permission prompt when the page is served over https', async () => {
+    window.happyDOM.setURL('https://ktodoran.github.io/neon-ledger/');
+    try {
+      const { user } = await open(standIn({ answers: false }));
+      await connect(user);
+
+      expect(screen.getByRole('alert').textContent).toContain('allow it and connect again');
+    } finally {
+      window.happyDOM.setURL('http://localhost:3000/');
+    }
   });
 
   it('opens the tour its own accounts and leaves the others alone', async () => {

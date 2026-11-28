@@ -9,10 +9,15 @@ dotnet run --project src/NeonLedger.Api`;
 
 /** Why a connection did not happen, in terms of what to do about it. */
 function explain(address, status) {
-  if (status === 0) {
-    return `Nothing answered at ${address}. Either no ledger is running there, or it does not accept requests from this page (${window.location.origin}). The ledger lists the pages it accepts under Cors:AllowedOrigins.`;
+  if (status !== 0) {
+    return `The ledger at ${address} answered ${String(status)}. It is running but cannot reach its database.`;
   }
-  return `The ledger at ${address} answered ${String(status)}. It is running but cannot reach its database.`;
+  const reasons = `Nothing answered at ${address}. Either no ledger is running there, or it does not accept requests from this page (${window.location.origin}). The ledger lists the pages it accepts under Cors:AllowedOrigins.`;
+  // A page served over https has to be allowed onto the local network first,
+  // and an attempt made while the browser is still asking fails like any other.
+  return window.location.protocol === 'https:'
+    ? `${reasons} If your browser has just asked for permission to reach your local network, allow it and connect again.`
+    : reasons;
 }
 
 /** The form for switching from the simulation to a ledger running on this machine. */

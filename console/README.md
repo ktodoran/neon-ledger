@@ -36,7 +36,7 @@ Only an address on the same machine is accepted (`localhost`, `127.0.0.1` or `[:
 
 The published console is served over https and a local ledger over http. Browsers treat that differently:
 
-- **Chrome and Edge** allow it after asking for permission to reach devices on your local network.
+- **Chrome and Edge** allow it after asking for permission to reach devices on your local network. A connection attempted before that permission is granted fails; connect again once it is.
 - **Safari** refuses to call a local http address from an https page.
 
 Running the console locally (`npm run dev`) avoids both, since page and ledger are then both on `localhost`.
